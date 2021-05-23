@@ -1,0 +1,10 @@
+//
+// Created by lzjlxebr on 5/23/21.
+//
+
+#ifndef WEBSOCKET_SERVER_HANDSHAKE_H
+#define WEBSOCKET_SERVER_HANDSHAKE_H
+
+
+
+#endif //WEBSOCKET_SERVER_HANDSHAKE_H
