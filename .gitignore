@@ -1,3 +1,9 @@
 # Project exclude paths
 /cmake-build-debug/
+/CMakeFiles/
 .idea
+cmake_install.cmake
+CMakeCache.txt
+Makefile
+websocket_server
+install_manifest.txt
