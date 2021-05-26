@@ -11,18 +11,25 @@
 /*
  * handshake
  * - opening handshake
- * -
  * - handshake response
+ * - closing handshake
  *
  * data swiping
  * - data framing
+ * - unmask frame
  * */
+void start_serve();
+
 int main() {
+    start_serve();
+}
+
+void start_serve() {
     int connfd, listenfd;
     socklen_t len;
     char buff[MAX_HEADER_LEN];
-    time_t ticks;
-    pid_t pid;
+
+    char isHandshake = 0;
 
     // socket
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -52,14 +59,65 @@ int main() {
                inet_ntop(AF_INET, &cli_addr.sin_addr, buff, sizeof(buff)),
                ntohs(cli_addr.sin_port));
 
-        handle_handshake_opening(connfd);
+        if (!isHandshake && handle_handshake_opening(connfd) < 0) {
+            close(connfd);
+            exit(0);
+        }
 
-        printf("");
+        isHandshake = 1; // TODO change to event loop
 
-//        close(connfd);
-//        exit(0);
+        while (1) {
+            DEBUG("===============> accept\n");
+            handle_data_frame(connfd);
+            DEBUG("===============> handle_data_frame\n");
+        }
+
     }
-
-
-    exit(0);
 }
+
+
+
+/*
+Frame format:
+      1 0 0 0 0 0 0 1 1 0 0 0 0 1 0 1 1 0 1 0 1 0 0 0 1 0 0 0 0 1 0 1
+      0                   1                   2                   3
+      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+     +-+-+-+-+-------+-+-------------+-------------------------------+
+     |F|R|R|R| opcode|M| Payload len |    Extended payload length    |
+     |I|S|S|S|  (4)  |A|     (7)     |             (16/64)           |
+     |N|V|V|V|       |S|             |   (if payload len==126/127)   |
+     | |1|2|3|       |K|             |                               |
+     +-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+     |     Extended payload length continued, if payload len == 127  |
+     + - - - - - - - - - - - - - - - +-------------------------------+
+     |                               |Masking-key, if MASK set to 1  |
+     +-------------------------------+-------------------------------+
+     | Masking-key (continued)       |          Payload Data         |
+     +-------------------------------- - - - - - - - - - - - - - - - +
+     :                     Payload Data continued ...                :
+     + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+     |                     Payload Data continued ...                |
+     +---------------------------------------------------------------+
+
+     +-+-+-+-+-------+-+-------------+-------------------------------+
+     |000000000000000|111111111111111|22222222222222|3333333333333333|
+     +-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+     |444444444444444|555555555555555|66666666666666|7777777777777777|
+     + - - - - - - - - - - - - - - - +-------------------------------+
+     |888888888888888|999999999999999|10101010101010|11______________|
+     +-------------------------------+-------------------------------+
+     |12_____________|13_____________|14____________|15______________|
+
+
+01101111 00000000 00000000 00000000
+
+ mask: 00000000 10110101 01000100 00110101
+  XOR  01101000 11010000 00101000 01011001
+  -------------------------------------------
+       01101000 01100101 01101100 01101100
+
+
+
+ 01101000 01100101 01101100 01101100
+
+ */
