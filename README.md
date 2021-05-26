@@ -9,3 +9,4 @@ Implements according to [RFC6455](https://datatracker.ietf.org/doc/rfc6455/).
 - [ ] Ping & Pong 
 - [ ] Rules check
 - [ ] Security stuff
+- [ ] All platform supported (macOS only maybe for now)
