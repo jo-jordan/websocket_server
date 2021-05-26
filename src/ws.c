@@ -4,15 +4,6 @@
 
 #include "ws.h"
 
-void print_bin_char_pad(unsigned char c)
-{
-    for (int i = 7; i >= 0; --i)
-    {
-        putchar( (c & (1 << i)) ? '1' : '0' );
-    }
-    putchar(' ');
-}
-
 int handle_handshake_opening(int fd) {
     ssize_t n;
     char req[MAX_HEADER_LEN];
@@ -28,22 +19,19 @@ int handle_handshake_opening(int fd) {
     }
 
     req[n] = '\0';
-
-    char *r = strstr(req, "GET");
-    char *sep = "\r\n";
     char *last;
 
     char *ws_sec_key = NULL;
     unsigned char *result;
 
-    for (char *token = strtok_r(req, sep, &last); token ; token = strtok_r(NULL, sep, &last)) {
+    for (char *token = strtok_r(req, TOKKEN_SEP, &last); token ; token = strtok_r(NULL, TOKKEN_SEP, &last)) {
         if (strstr(token, WS_SEC_KEY)) {
             ws_sec_key = strtok(token, ": ");
             ws_sec_key = strtok(NULL, ": ");
 
-            DEBUG("We got sec-wb-key: %s\n", ws_sec_key);
+            DEBUG("We got sec-wb-key: %s", ws_sec_key);
             do_sec_key_sha1(ws_sec_key, &result);
-            DEBUG("SHA1 result: %s\n", result);
+            DEBUG("SHA1 result: %s", result);
             break;
         }
     }
@@ -52,7 +40,7 @@ int handle_handshake_opening(int fd) {
     res = malloc(MAX_HS_RES_LEN);
     strcpy(res, HANDSHAKE_RES_HEADER);
     strcat(res, (const char *) result);
-    strcat(res, "\r\n\r\n");
+    strcat(res, TOKKEN_SEP TOKKEN_SEP);
 
     ssize_t wn = write(fd, res, strlen(res));
     DEBUG("response(size: %zd): %s", wn, res);
@@ -100,7 +88,7 @@ int read_frame(int fd, struct data_frame *df) {
         return (-1);
     }
 
-    DEBUG("read_frame done.\n");
+    DEBUG("read_frame done.");
     return (0);
 }
 
@@ -112,18 +100,18 @@ void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char delta_o
         df->cur_byte += delta_offset;
 }
 
+
+
 void dump_data_frame(struct data_frame *df) {
     unsigned char *rbuff = df->data;
     int nlc = 0;
     for (int i = 0; i < MAX_FRAME_LEN; ++i) {
         if (nlc == 3) {
             nlc = -1;
-            print_bin_char_pad(rbuff[i]);
-            printf("\n");
+            DEBUG("%s", wrap_char2str(rbuff[i]));
         } else {
-            print_bin_char_pad(rbuff[i]);
+            DEBUG("%s", wrap_char2str(rbuff[i]));
         }
-
         ++nlc;
     }
 }
@@ -131,8 +119,10 @@ void dump_data_frame(struct data_frame *df) {
 void handle_data_frame(int fd) {
     struct data_frame df;
     memset(&df, 0, sizeof(df));
-    read_frame(fd, &df);
 
+repeat:
+    read_frame(fd, &df);
+//    dump_data_frame(&df);
     // FIN and OPCODE byte
     // retrieve fin and opcode
     read_byte_from_frame_by_offset(&df, 0);
@@ -143,7 +133,7 @@ void handle_data_frame(int fd) {
     }
     df.opcode = *df.cur_byte << 1;
     df.opcode = df.opcode >> 1;
-    DEBUG("\nopcode: ");print_bin_char_pad(df.opcode);DEBUG("\n");
+    DEBUG("opcode: %s", wrap_char2str(df.opcode));
 
     // MASK and Payload len byte
     read_byte_from_frame_by_offset(&df, 1);
@@ -153,8 +143,6 @@ void handle_data_frame(int fd) {
 
     if (df.payload_len == PL_LEN_127) {
         // Path 3: Payload len == 127 ext payload len 64 mask start at byte 10
-        df.ext_payload_bits = 64;
-
         // combine 8 bytes into final length
         int i = 0;
         do {
@@ -189,14 +177,21 @@ void handle_data_frame(int fd) {
 
     // unmask data now
     do {
+        // buffer is so small
+        // we should read again and again
+
+        // assume we received a frame that size is 0xFFFFFFFFFFFFFFFF
+        // our buffer size is 512
+        //
+        if (df.r_count >= MAX_FRAME_LEN) {
+            df.r_count = 0;
+            df.cur_byte = NULL;
+            DEBUG("PAYLOAD (to be continued): %s",  df.unmasked_payload);
+            goto repeat;
+        }
         read_byte_from_frame_by_offset(&df, 1);
-
         df.unmasked_payload[df.r_count] = *df.cur_byte ^ (df.mask_key[df.r_count % 4]);
-
     } while (++df.r_count < df.payload_final_len);
 
-    DEBUG("\nPAYLOAD: %s\n",  df.unmasked_payload);
-
-//    free(df.data);
-//    free(df.cur_byte);
+    DEBUG("PAYLOAD: %s",  df.unmasked_payload);
 }

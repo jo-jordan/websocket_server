@@ -18,7 +18,7 @@
 
 
 
-#define MAX_FRAME_LEN       512
+#define MAX_FRAME_LEN       1024
 #define	MAX_LISTEN_Q		1024
 #define	MAX_HEADER_LEN		2048
 #define MAX_HS_RES_LEN      180
@@ -35,6 +35,8 @@
 
 
 #define HEX_0xFF 0xFF
+
+#define TOKKEN_SEP "\r\n"
 
 #define BYTE_IDX_FIN 0
 #define BYTE_IDX_MASK 1
@@ -71,15 +73,11 @@ struct data_frame {
     // current byte
     unsigned char *cur_byte;
 
-    // current byte count
-    unsigned int cur_b_index;
-
     // bit [1] len=1
     unsigned char fin;
 
     // bit [4, 7] len=4
     unsigned char opcode;
-
     unsigned char rev1;
     unsigned char rev2;
     unsigned char rev3;
@@ -93,14 +91,6 @@ struct data_frame {
     // final length of payload
     unsigned long long payload_final_len;
 
-    // Extended payload length in bit
-    unsigned char ext_payload_bits;
-
-    // Extended payload length, max size 64-bit
-    // if payload_len = 127 then 64 (bit [16, 79])
-    // else 16 (bit [16, 31])
-    unsigned long long ext_payload_len;
-
     // if len of ext_payload_len = 16 then bit [32，63]
     // else bit [80, 111]
     // length is 32-bit
@@ -110,11 +100,19 @@ struct data_frame {
     unsigned int r_count;
 
     // Unmasked payload data buffer
-    unsigned char unmasked_payload[1024];
+    unsigned char unmasked_payload[MAX_FRAME_LEN];
 };
-struct message {};
 
-void print_bin_char_pad(unsigned char c);
+struct message {
+    unsigned char type;
+};
+
+struct client {
+    // CONNECTING
+    unsigned char status;
+
+    int fd;
+};
 
 int handle_handshake_opening(int);
 void do_sec_key_sha1(char *key, unsigned char **result);
@@ -123,8 +121,6 @@ int read_frame(int fd, struct data_frame *df);
 void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char offset);
 
 void handle_data_frame(int fd);
-
-
 
 //void check_handshake_header();
 //void handshake_accept(int, size_t);

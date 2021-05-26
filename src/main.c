@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <strings.h>
@@ -8,7 +7,6 @@
 #include "ws.h"
 #include "base.h"
 #include "net_util.h"
-
 
 /*
  * handshake
@@ -42,12 +40,14 @@ void start_serve() {
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(9000);
     if (bind(listenfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        exit(0);
+        ERROR("bind error");
+        exit(-1);
     }
 
     // listen
     if (listen(listenfd, MAX_LISTEN_Q) < 0) {
-        exit(0);
+        ERROR("listen error");
+        exit(-1);
     }
     DEBUG("server up.");
 
