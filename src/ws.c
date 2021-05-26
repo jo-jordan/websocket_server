@@ -100,7 +100,7 @@ int read_frame(int fd, struct data_frame *df) {
         return (-1);
     }
 
-    DEBUG("\nread_frame done.\n");
+    DEBUG("read_frame done.\n");
     return (0);
 }
 
@@ -138,6 +138,9 @@ void handle_data_frame(int fd) {
     read_byte_from_frame_by_offset(&df, 0);
 
     df.fin = (HEX_0xFF & *df.cur_byte) >> FIN_SHIFT_COUNT;
+    if (!df.fin) {
+
+    }
     df.opcode = *df.cur_byte << 1;
     df.opcode = df.opcode >> 1;
     DEBUG("\nopcode: ");print_bin_char_pad(df.opcode);DEBUG("\n");

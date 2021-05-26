@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "ws.h"
+#include "base.h"
+#include "net_util.h"
 
 
 /*
@@ -27,7 +29,6 @@ int main() {
 void start_serve() {
     int connfd, listenfd;
     socklen_t len;
-    char buff[MAX_HEADER_LEN];
 
     char isHandshake = 0;
 
@@ -48,16 +49,16 @@ void start_serve() {
     if (listen(listenfd, MAX_LISTEN_Q) < 0) {
         exit(0);
     }
-    printf("server up.\n");
+    DEBUG("server up.");
 
     for (;;) {
         len = sizeof(cli_addr);
         // accept
         connfd = accept(listenfd, (struct sockaddr *)&cli_addr, &len);
 
-        printf("connection from %s, port %d\n",
-               inet_ntop(AF_INET, &cli_addr.sin_addr, buff, sizeof(buff)),
-               ntohs(cli_addr.sin_port));
+        DEBUG("connection from %s, port %d",
+               get_conn_addr(&cli_addr),
+               get_conn_port(&cli_addr));
 
         if (!isHandshake && handle_handshake_opening(connfd) < 0) {
             close(connfd);
@@ -67,9 +68,9 @@ void start_serve() {
         isHandshake = 1; // TODO change to event loop
 
         while (1) {
-            DEBUG("===============> accept\n");
+            DEBUG("===============> accept");
             handle_data_frame(connfd);
-            DEBUG("===============> handle_data_frame\n");
+            DEBUG("===============> handle_data_frame");
         }
 
     }

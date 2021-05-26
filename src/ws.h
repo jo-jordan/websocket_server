@@ -11,12 +11,12 @@
 #include "base64.h"
 #include "sha1.h"
 #include "handshake.h"
+#include "base.h"
 
 #ifndef WEBSOCKET_SERVER_WS_H
 #define WEBSOCKET_SERVER_WS_H
 
-#define DEBUG(...) fprintf(stdout, __VA_ARGS__)
-#define ERROR(...) fprintf(stderr, __VA_ARGS__)
+
 
 #define MAX_FRAME_LEN       512
 #define	MAX_LISTEN_Q		1024
