@@ -3,6 +3,9 @@
 // https://datatracker.ietf.org/doc/rfc6455/
 //
 
+#ifndef WEBSOCKET_SERVER_WS_H
+#define WEBSOCKET_SERVER_WS_H
+
 #include <stddef.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -13,62 +16,57 @@
 #include "handshake.h"
 #include "base.h"
 
-#ifndef WEBSOCKET_SERVER_WS_H
-#define WEBSOCKET_SERVER_WS_H
+// Single frame can be split into sort of buffers
+// this macro is max size of single buffer in byte
+#define MAX_FRAME_SINGLE_BUF_SIZE       1024
 
-
-
-#define MAX_FRAME_LEN       1024
+// Max queue size of listen()
 #define	MAX_LISTEN_Q		1024
-#define	MAX_HEADER_LEN		2048
-#define MAX_HS_RES_LEN      180
 
+// Max size of handshake request message size in byte
+#define	MAX_HS_REQ_SIZE		512
+
+// Max size of handshake response message size in byte
+#define MAX_HS_RES_SIZE     180
+
+// FIN of data frame shift count
+// |<- this is FIN bit
+// 10000000
+// 10000000 >> 7 = 00000001
+// then we get FIN bit
 #define FIN_SHIFT_COUNT 7
+
+// MASK of data frame shift count
+// |<- this is MASK bit
+// 10000000
+// 10000000 >> 7 = 00000001
+// then we get MASK bit
 #define MASK_SHIFT_COUNT 7
 
-#define PL_LEN_127 127
-#define PL_LEN_126 126
+// Payload length value 127
+#define PL_LEN_VAL_127 127
 
-#define EXT_PL_BITS_16 16
-#define EXT_PL_BITS_64 64
+// Payload length value 126
+#define PL_LEN_VAL_126 126
 
-
-
+// Just 0xFF
 #define HEX_0xFF 0xFF
 
-#define TOKKEN_SEP "\r\n"
+// Header separator
+#define TOKEN_SEP "\r\n"
 
-#define BYTE_IDX_FIN 0
-#define BYTE_IDX_MASK 1
-#define BYTE_IDX_ETX_PL_LEN 2
-
-#define BYTE_MASK_KEY_EXT_16 4
-#define BYTE_MASK_KEY_EXT_64 10
-
-#define BYTE_PL_DATA_EXT_16 8
-#define BYTE_PL_DATA_EXT_64 14
-
-#define OPC_POS 4
-#define MASK_POS 8
-
-#define OPC_CONTINUE 0x0
-#define OPC_TYPE_TEXT 0x1
-#define OPC_TYPE_BIN 0x2
-#define OPC_CONN_CLS 0x8
-#define OPC_PING 0x9
-#define OPC_PONG 0xA
-#define OPC_CONN_CLS 0x8
-
-
-
+// Constant Sec-WebSocket-Key
 #define WS_SEC_KEY "Sec-WebSocket-Key"
+
+// Constant GUID
 #define GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+// SHA1 stuff
 #define CAT_KEY_LEN 60
 
 struct data_frame {
     // frame data
-    unsigned char data[MAX_FRAME_LEN];
+    unsigned char data[MAX_FRAME_SINGLE_BUF_SIZE];
 
     // current byte
     unsigned char *cur_byte;
@@ -100,7 +98,7 @@ struct data_frame {
     unsigned int r_count;
 
     // Unmasked payload data buffer
-    unsigned char unmasked_payload[MAX_FRAME_LEN];
+    unsigned char unmasked_payload[MAX_FRAME_SINGLE_BUF_SIZE];
 };
 
 struct message {
@@ -121,14 +119,5 @@ int read_frame(int fd, struct data_frame *df);
 void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char offset);
 
 void handle_data_frame(int fd);
-
-//void check_handshake_header();
-//void handshake_accept(int, size_t);
-//
-//void on_receive_message();
-//void send_message();
-//
-//void handle_handshake_closing();
-
 
 #endif //WEBSOCKET_SERVER_WS_H
