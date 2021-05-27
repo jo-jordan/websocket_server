@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netinet/in.h>
 #include "base64.h"
 #include "sha1.h"
 #include "handshake.h"
@@ -64,6 +65,8 @@
 // SHA1 stuff
 #define CAT_KEY_LEN 60
 
+#define OP_CTRL_CLOSE 0x8
+
 struct data_frame {
     // frame data
     unsigned char data[MAX_FRAME_SINGLE_BUF_SIZE];
@@ -102,7 +105,11 @@ struct data_frame {
 };
 
 struct message {
+    struct sockaddr_in cli_addr;
+    int fd;
     unsigned char type;
+    unsigned char is_fragmented;
+    unsigned char is_handshake;
 };
 
 struct client {
@@ -112,12 +119,14 @@ struct client {
     int fd;
 };
 
-int handle_handshake_opening(int);
+int handle_handshake_opening(struct message *msg);
 void do_sec_key_sha1(char *key, unsigned char **result);
 
 int read_frame(int fd, struct data_frame *df);
 void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char offset);
 
-void handle_data_frame(int fd);
+int handle_data_frame(int fd);
+
+void handle_message_received(struct message *msg);
 
 #endif //WEBSOCKET_SERVER_WS_H

@@ -4,6 +4,7 @@
 #include <strings.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/errno.h>
 #include "ws.h"
 #include "base.h"
 #include "net_util.h"
@@ -24,11 +25,18 @@ int main() {
     start_serve();
 }
 
+void sig_child(int signo);
+void sig_child(int signo) {
+    pid_t pid;
+    int stat;
+    while((pid = waitpid(-1, &stat, WNOHANG)) > 0)
+        DEBUG("child %d terminated", pid);
+    return;
+}
+
 void start_serve() {
     int connfd, listenfd;
     socklen_t len;
-
-    char isHandshake = 0;
 
     // socket
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -51,28 +59,43 @@ void start_serve() {
     }
     DEBUG("server up.");
 
+    signal(SIGCHLD, sig_child);
+
     for (;;) {
         len = sizeof(cli_addr);
         // accept
-        connfd = accept(listenfd, (struct sockaddr *)&cli_addr, &len);
+        if ((connfd = accept(listenfd, (struct sockaddr *)&cli_addr, &len)) < 0) {
+            if (errno == EINTR) {
+                continue;
+            } else {
+                ERROR("accept error.");
+                close(listenfd);
+                exit(-1);
+            }
+        }
 
-        DEBUG("connection from %s, port %d",
-               get_conn_addr(&cli_addr),
-               get_conn_port(&cli_addr));
+        if (fork() == 0) {
+            // child process
+            DEBUG("connfd: %d", connfd);
+            close(listenfd);
 
-        if (!isHandshake && handle_handshake_opening(connfd) < 0) {
-            close(connfd);
+            struct message *msg;
+            msg = malloc(sizeof(struct message));
+            msg->fd = connfd;
+            msg->is_fragmented = 0;
+            msg->cli_addr = cli_addr;
+            msg->is_handshake = 0;
+
+            handle_handshake_opening(msg);
+
+            handle_message_received(msg);
+
+            free(msg);
+
             exit(0);
         }
 
-        isHandshake = 1; // TODO change to event loop
-
-        while (1) {
-            DEBUG("===============> accept");
-            handle_data_frame(connfd);
-            DEBUG("===============> handle_data_frame");
-        }
-
+        close(connfd);
     }
 }
 

@@ -3,11 +3,12 @@
 //
 
 #include "ws.h"
+#include "net_util.h"
 
-int handle_handshake_opening(int fd) {
+int handle_handshake_opening(struct message *msg) {
     ssize_t n;
     char req[MAX_HS_REQ_SIZE];
-    n = read(fd, &req, sizeof(req));
+    n = read(msg->fd, &req, sizeof(req));
     if (n < 0) {
         DEBUG("read error: %zd", n);
         return (-1);
@@ -42,16 +43,12 @@ int handle_handshake_opening(int fd) {
     strcat(res, (const char *) result);
     strcat(res, TOKEN_SEP TOKEN_SEP);
 
-    ssize_t wn = write(fd, res, strlen(res));
+    ssize_t wn = write(msg->fd, res, strlen(res));
     DEBUG("response(size: %zd): %s", wn, res);
 
     free(res);
 
-//    if (ws_sec_key == NULL) {
-//        ERROR(stderr, "invalid ws header.");
-//        exit(-1);
-//    }
-
+    msg->is_handshake = 1;
     return 0;
 }
 
@@ -116,24 +113,44 @@ void dump_data_frame(struct data_frame *df) {
     }
 }
 
-void handle_data_frame(int fd) {
+void handle_message_received(struct message *msg) {
+    DEBUG("message from %s, port %d (handshake done.)",
+          get_conn_addr(&msg->cli_addr),
+          get_conn_port(&msg->cli_addr));
+
+    while (1) {
+        DEBUG("===============> accept");
+        if (handle_data_frame(msg->fd) == -1) {
+            break;
+        }
+        DEBUG("===============> handle_data_frame");
+    }
+}
+
+int handle_data_frame(int fd) {
     struct data_frame df;
     memset(&df, 0, sizeof(df));
 
-repeat:
     read_frame(fd, &df);
-//    dump_data_frame(&df);
     // FIN and OPCODE byte
     // retrieve fin and opcode
     read_byte_from_frame_by_offset(&df, 0);
 
-    df.fin = (HEX_0xFF & *df.cur_byte) >> FIN_SHIFT_COUNT;
-    if (!df.fin) {
 
+    df.fin = (HEX_0xFF & *df.cur_byte) >> FIN_SHIFT_COUNT;
+
+    if (df.fin) {
+        // unfragmented frame
+    } else {
+        // fragmented frame
     }
     df.opcode = *df.cur_byte << 1;
     df.opcode = df.opcode >> 1;
     DEBUG("opcode: %s", wrap_char2str(df.opcode));
+
+    if (df.opcode == OP_CTRL_CLOSE) {
+        return -1;
+    }
 
     // MASK and Payload len byte
     read_byte_from_frame_by_offset(&df, 1);
@@ -180,22 +197,20 @@ repeat:
     do {
         // buffer is so small
         // we should read again and again
-
-        // assume we received a frame that size is 0xFFFFFFFFFFFFFFFF
+        // assume we received a frame that size is 0x7FFFFFFFFFFFFFFF
         // our buffer size is 512
-        //        0    0    1
-        // frame: [f1] [f2] [f3]
-
-
-        if (df.r_count >= MAX_FRAME_SINGLE_BUF_SIZE) {
-            df.r_count = 0;
-            df.cur_byte = NULL;
-            DEBUG("PAYLOAD (to be continued): %s",  df.unmasked_payload);
-            goto repeat;
-        }
+        //
+        //         0    0    1
+        // frame:  [f1] [f2] [f3]
+        // buffer:
+        // f1: [b1] [b2] [b3] ... [bn]
+        // f2: [b1] [b2] [b3] ... [bn]
+        // f3: [b1] [b2] [b3] ... [bn]
         read_byte_from_frame_by_offset(&df, 1);
         df.unmasked_payload[df.r_count] = *df.cur_byte ^ (df.mask_key[df.r_count % 4]);
     } while (++df.r_count < df.payload_final_len);
 
     DEBUG("PAYLOAD: %s",  df.unmasked_payload);
+
+    return 0;
 }
