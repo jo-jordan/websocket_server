@@ -20,12 +20,12 @@
  * - unmask frame
  * */
 void start_serve();
+void sig_child(int signo);
 
 int main() {
     start_serve();
 }
 
-void sig_child(int signo);
 void sig_child(int signo) {
     pid_t pid;
     int stat;
@@ -76,8 +76,8 @@ void start_serve() {
 
         if (fork() == 0) {
             // child process
-            DEBUG("connfd: %d", connfd);
             close(listenfd);
+            DEBUG("connfd: %d", connfd);
 
             struct message *msg;
             msg = malloc(sizeof(struct message));
@@ -87,11 +87,8 @@ void start_serve() {
             msg->is_handshake = 0;
 
             handle_handshake_opening(msg);
-
             handle_message_received(msg);
-
             free(msg);
-
             exit(0);
         }
 
@@ -103,7 +100,6 @@ void start_serve() {
 
 /*
 Frame format:
-      1 0 0 0 0 0 0 1 1 0 0 0 0 1 0 1 1 0 1 0 1 0 0 0 1 0 0 0 0 1 0 1
       0                   1                   2                   3
       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
      +-+-+-+-+-------+-+-------------+-------------------------------+

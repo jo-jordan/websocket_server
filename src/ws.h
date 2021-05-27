@@ -19,7 +19,7 @@
 
 // Single frame can be split into sort of buffers
 // this macro is max size of single buffer in byte
-#define MAX_FRAME_SINGLE_BUF_SIZE       1024
+#define MAX_FRAME_SINGLE_BUF_SIZE       128
 
 // Max queue size of listen()
 #define	MAX_LISTEN_Q		1024
@@ -122,11 +122,12 @@ struct client {
 int handle_handshake_opening(struct message *msg);
 void do_sec_key_sha1(char *key, unsigned char **result);
 
-int read_frame(int fd, struct data_frame *df);
+int read_frame_into_buffer(int fd, struct data_frame *df);
 void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char offset);
 
 int handle_data_frame(int fd);
 
 void handle_message_received(struct message *msg);
+void dump_data_frame(struct data_frame *df);
 
 #endif //WEBSOCKET_SERVER_WS_H

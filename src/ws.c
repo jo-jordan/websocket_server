@@ -75,16 +75,19 @@ void do_sec_key_sha1(char *key, unsigned char **result) {
     free(_key);
 }
 
-int read_frame(int fd, struct data_frame *df) {
+int read_frame_into_buffer(int fd, struct data_frame *df) {
     ssize_t rn = read(fd, df->data, sizeof(df->data));
-    if (rn == 0) {
-        return 0;
-    }
+    df->cur_byte = NULL;
     if (rn < 0) {
         ERROR("read_frame error: %zd", rn);
         return (-1);
     }
+    df->r_count = 0;
+    if (rn == 0) {
+        return 0;
+    }
 
+    dump_data_frame(df);
     DEBUG("read_frame done.");
     return (0);
 }
@@ -97,20 +100,24 @@ void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char delta_o
         df->cur_byte += delta_offset;
 }
 
-
-
 void dump_data_frame(struct data_frame *df) {
     unsigned char *rbuff = df->data;
     int nlc = 0;
+    char *tmp;
+    tmp = malloc(32);
     for (int i = 0; i < MAX_FRAME_SINGLE_BUF_SIZE; ++i) {
-        if (nlc == 3) {
+        if (nlc == 16) {
             nlc = -1;
-            DEBUG("%s", wrap_char2str(rbuff[i]));
+            DEBUG("%s", tmp);
+            strcpy(tmp, "");
         } else {
-            DEBUG("%s", wrap_char2str(rbuff[i]));
+
+            strcat(tmp, wrap_char2str(rbuff[i]));
+            strcat(tmp, " ");
         }
         ++nlc;
     }
+    free(tmp);
 }
 
 void handle_message_received(struct message *msg) {
@@ -131,11 +138,11 @@ int handle_data_frame(int fd) {
     struct data_frame df;
     memset(&df, 0, sizeof(df));
 
-    read_frame(fd, &df);
+repeat:
+    read_frame_into_buffer(fd, &df);
     // FIN and OPCODE byte
     // retrieve fin and opcode
     read_byte_from_frame_by_offset(&df, 0);
-
 
     df.fin = (HEX_0xFF & *df.cur_byte) >> FIN_SHIFT_COUNT;
 
@@ -158,28 +165,32 @@ int handle_data_frame(int fd) {
     df.payload_len = *df.cur_byte << 1;
     df.payload_len = df.payload_len >> 1;
 
+    DEBUG("Payload len(temp): %d", df.payload_len);
+
     if (df.payload_len == PL_LEN_VAL_127) {
         // Path 3: Payload len == 127 ext payload len 64 mask start at byte 10
         // combine 8 bytes into final length
-        int i = 0;
-        do {
-            read_byte_from_frame_by_offset(&df, 1);
-            df.payload_final_len = *df.cur_byte;
-            df.payload_final_len = df.payload_final_len << 8;
+        read_byte_from_frame_by_offset(&df, 1);
+        df.payload_final_len = *df.cur_byte;
+        df.payload_final_len = df.payload_final_len << 8;
 
+        for (int i = 0; i < 6; ++i) {
+            read_byte_from_frame_by_offset(&df, 1);
             df.payload_final_len += *df.cur_byte;
-        } while (++i < 8);
+            df.payload_final_len = df.payload_final_len << 8;
+        }
+
+        read_byte_from_frame_by_offset(&df, 1);
+        df.payload_final_len += *df.cur_byte;
     } else if (df.payload_len == PL_LEN_VAL_126) {
         // Path 2: Payload len == 126 ext payload len 16 mask start at byte 4
         // combine 8 bytes into final length
-        int i = 0;
-        do {
-            read_byte_from_frame_by_offset(&df, 1);
-            df.payload_final_len = *df.cur_byte;
-            df.payload_final_len = df.payload_final_len << 8;
+        read_byte_from_frame_by_offset(&df, 1);
+        df.payload_final_len = *df.cur_byte;
+        df.payload_final_len = df.payload_final_len << 8;
 
-            df.payload_final_len += *df.cur_byte;
-        } while (++i < 2);
+        read_byte_from_frame_by_offset(&df, 1);
+        df.payload_final_len += *df.cur_byte;
     } else {
         // Path 1: Payload len < 126 mask start at byte 2
         df.payload_final_len = df.payload_len;
@@ -194,21 +205,30 @@ int handle_data_frame(int fd) {
 
     DEBUG("payload_final_len: %llu", df.payload_final_len);
     // unmask data now
-    do {
-        // buffer is so small
-        // we should read again and again
-        // assume we received a frame that size is 0x7FFFFFFFFFFFFFFF
-        // our buffer size is 512
-        //
-        //         0    0    1
-        // frame:  [f1] [f2] [f3]
-        // buffer:
-        // f1: [b1] [b2] [b3] ... [bn]
-        // f2: [b1] [b2] [b3] ... [bn]
-        // f3: [b1] [b2] [b3] ... [bn]
-        read_byte_from_frame_by_offset(&df, 1);
+
+    int offset = 1;
+    while (1) {
+        read_byte_from_frame_by_offset(&df, offset);
         df.unmasked_payload[df.r_count] = *df.cur_byte ^ (df.mask_key[df.r_count % 4]);
-    } while (++df.r_count < df.payload_final_len);
+        ++df.r_count;
+
+        if (df.r_count == MAX_FRAME_SINGLE_BUF_SIZE) {
+            DEBUG("(%d)PAYLOAD: %s", df.r_count, df.unmasked_payload);
+
+            if (df.fin) {
+                read_frame_into_buffer(fd, &df);
+                offset = 0;
+                continue;
+            } else {
+                goto repeat;
+            }
+        }
+        offset = 1;
+
+        if (df.r_count == df.payload_final_len) {
+            break;
+        }
+    }
 
     DEBUG("PAYLOAD: %s",  df.unmasked_payload);
 
