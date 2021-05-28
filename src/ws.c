@@ -76,6 +76,7 @@ void do_sec_key_sha1(char *key, unsigned char **result) {
 }
 
 int read_frame_into_buffer(int fd, struct data_frame *df) {
+    memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
     ssize_t rn = read(fd, df->data, sizeof(df->data));
     df->cur_byte = NULL;
     if (rn < 0) {
@@ -111,12 +112,12 @@ void dump_data_frame(struct data_frame *df) {
             DEBUG("%s", tmp);
             strcpy(tmp, "");
         } else {
-
             strcat(tmp, wrap_char2str(rbuff[i]));
             strcat(tmp, " ");
         }
         ++nlc;
     }
+    strcpy(tmp, "");
     free(tmp);
 }
 
