@@ -83,7 +83,7 @@ int read_frame_into_buffer(int fd, struct data_frame *df) {
         ERROR("read_frame error: %zd", rn);
         return (-1);
     }
-    df->r_count = 0;
+    df->r_single_count = 0;
     if (rn == 0) {
         return 0;
     }
@@ -210,10 +210,11 @@ repeat:
     int offset = 1;
     while (1) {
         read_byte_from_frame_by_offset(&df, offset);
-        df.unmasked_payload[df.r_count] = *df.cur_byte ^ (df.mask_key[df.r_count % 4]);
+        df.unmasked_payload[df.r_single_count] = *df.cur_byte ^ (df.mask_key[df.r_count % 4]);
         ++df.r_count;
+        ++df.r_single_count;
 
-        if (df.r_count == MAX_FRAME_SINGLE_BUF_SIZE) {
+        if (df.r_single_count == MAX_FRAME_SINGLE_BUF_SIZE) {
             DEBUG("(%d)PAYLOAD: %s", df.r_count, df.unmasked_payload);
 
             if (df.fin) {
@@ -232,6 +233,8 @@ repeat:
     }
 
     DEBUG("PAYLOAD: %s",  df.unmasked_payload);
+
+    write(fd, df.unmasked_payload, MAX_FRAME_SINGLE_BUF_SIZE);
 
     return 0;
 }

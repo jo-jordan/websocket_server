@@ -98,7 +98,12 @@ struct data_frame {
     unsigned char mask_key[4];
 
     // Read count for payload data bytes reading
+    // this will never set to 0 until a message is finish
     unsigned int r_count;
+
+    // Read count for single buffer
+    // when over MAX_FRAME_SINGLE_BUF_SIZE this will be set to 0
+    unsigned int r_single_count;
 
     // Unmasked payload data buffer
     unsigned char unmasked_payload[MAX_FRAME_SINGLE_BUF_SIZE];
