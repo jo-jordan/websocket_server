@@ -6,8 +6,7 @@
 #include <unistd.h>
 #include <sys/errno.h>
 #include "ws.h"
-#include "base.h"
-#include "net_util.h"
+
 
 /*
  * handshake
@@ -78,17 +77,8 @@ void start_serve() {
             // child process
             close(listenfd);
             DEBUG("connfd: %d", connfd);
-
-            struct message *msg;
-            msg = malloc(sizeof(struct message));
-            msg->fd = connfd;
-            msg->is_fragmented = 0;
-            msg->cli_addr = cli_addr;
-            msg->is_handshake = 0;
-
-            handle_handshake_opening(msg);
-            handle_message_received(msg);
-            free(msg);
+            handle_conn(connfd, &cli_addr);
+            DEBUG("handle_conn done: %d", connfd);
             exit(0);
         }
 

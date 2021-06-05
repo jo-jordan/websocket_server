@@ -2,13 +2,33 @@
 // Created by lzjlxebr on 5/24/21.
 //
 
+/*
+
+ message: {}
+ fragment: []
+ buffer: ()
+
+ example:
+ m{
+    f1[b1(), b2(), b3()],
+    f2[b1(), b2(), b3()],
+    f3[b1(), b2()]
+ }
+
+ m: len: 3072
+ f1: len maybe -> 1024, FIN -> 0
+ f2: len maybe -> 1024, FIN -> 0
+ f3: len maybe -> 1024, FIN -> 1
+
+ */
+
 #include "ws.h"
 #include "net_util.h"
 
-int handle_handshake_opening(struct message *msg) {
+int handle_handshake_opening(message *msg) {
     ssize_t n;
     char req[MAX_HS_REQ_SIZE];
-    n = read(msg->fd, &req, sizeof(req));
+    n = read(msg->source_fd, &req, sizeof(req));
     if (n < 0) {
         DEBUG("read error: %zd", n);
         return (-1);
@@ -43,7 +63,7 @@ int handle_handshake_opening(struct message *msg) {
     strcat(res, (const char *) result);
     strcat(res, TOKEN_SEP TOKEN_SEP);
 
-    ssize_t wn = write(msg->fd, res, strlen(res));
+    ssize_t wn = write(msg->source_fd, res, strlen(res));
     DEBUG("response(size: %zd): %s", wn, res);
 
     free(res);
@@ -75,32 +95,6 @@ void do_sec_key_sha1(char *key, unsigned char **result) {
     free(_key);
 }
 
-int read_frame_into_buffer(int fd, struct data_frame *df) {
-    memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
-    ssize_t rn = read(fd, df->data, sizeof(df->data));
-    df->cur_byte = NULL;
-    if (rn < 0) {
-        ERROR("read_frame error: %zd", rn);
-        return (-1);
-    }
-    df->r_single_count = 0;
-    if (rn == 0) {
-        return 0;
-    }
-
-    dump_data_frame(df);
-    DEBUG("read_frame done.");
-    return (0);
-}
-
-// Read offset bytes from current set
-void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char delta_offset) {
-    if (df->cur_byte == NULL)
-        df->cur_byte = df->data;
-    else
-        df->cur_byte += delta_offset;
-}
-
 void dump_data_frame(struct data_frame *df) {
     unsigned char *rbuff = df->data;
     int nlc = 0;
@@ -121,120 +115,202 @@ void dump_data_frame(struct data_frame *df) {
     free(tmp);
 }
 
-void handle_message_received(struct message *msg) {
-    DEBUG("message from %s, port %d (handshake done.)",
-          get_conn_addr(&msg->cli_addr),
-          get_conn_port(&msg->cli_addr));
+client clients[MAX_CONN];
+int cur_cli_count = 0;
 
-    while (1) {
-        DEBUG("===============> accept");
-        if (handle_data_frame(msg->fd) == -1) {
-            break;
-        }
-        DEBUG("===============> handle_data_frame");
+char contains_client(client *cli) {
+    for (int i = 0; i < MAX_CONN; ++i) {
+        if (cli->cli_addr.sin_addr.s_addr == clients[i].cli_addr.sin_addr.s_addr
+            && cli->cli_addr.sin_port == clients[i].cli_addr.sin_port) return 1;
+
     }
+    return 0;
 }
 
-int handle_data_frame(int fd) {
+int add_client(client *cli) {
+    cli = malloc(sizeof(client));
+    clients[cur_cli_count++] = *cli;
+    return cur_cli_count;
+}
+
+void remove_client(int idx) {
+    DEBUG("remove_client: %d", idx);
+    free(&(clients[idx]));
+}
+
+int get_client_index(struct sockaddr_in *cli_addr) {
+    for (int i = 0; i < MAX_CONN; ++i) {
+        client cur_cli = clients[i];
+        if (cli_addr->sin_addr.s_addr == cur_cli.cli_addr.sin_addr.s_addr
+            && cli_addr->sin_port == cur_cli.cli_addr.sin_port) return i;
+
+    }
+    return -1;
+}
+
+client get_client(int idx) {
+    return clients[idx];
+}
+
+void handle_conn(int conn_fd, struct sockaddr_in *cli_addr) {
+    int idx = get_client_index(cli_addr);
+    client cli;
+    if (idx == -1) {
+
+        idx = add_client(&cli);
+
+        message *msg;
+        msg = malloc(sizeof(message));
+        msg->source_fd = conn_fd;
+        msg->is_fragmented = 0;
+        msg->is_handshake = 0;
+
+        cli.cli_addr = *cli_addr;
+
+        handle_handshake_opening(msg);
+        DEBUG("connection from %s, port %d (handshake done.)",
+              get_conn_addr(cli_addr),
+              get_conn_port(cli_addr));
+
+        cli = get_client(idx);
+        handle_message(msg);
+        remove_client(idx);
+    }
+
+
+}
+
+void handle_message(message *msg) {
+    while (1) {
+        if (handle_single_frame(msg) == -1) {
+            return;
+        }
+    }
+
+}
+
+int read_into_buffer(message *msg, struct data_frame *df) {
+    memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
+    DEBUG("2: fd %d", msg->source_fd);
+    ssize_t rn = read(msg->source_fd, df->data, sizeof(df->data));
+    df->cur_buf_len = 0;
+
+    if (rn < 0) {
+        ERROR("read_into_buffer error: %zd", rn);
+        return (-1);
+    }
+
+    df->payload_read_len+=rn;
+    df->cur_buf_len = rn;
+    DEBUG("read_into_buffer : %zd", rn);
+
+    return (0);
+}
+
+int handle_buffer(message *msg, struct data_frame *df) {
+    int index;
+
+    index = 0;
+    unsigned char cur_byte = df->data[index];
+    if (df->frame_header_handled == 0) {
+        // Head buffer of frame
+        df->fin = (HEX_0xFF & cur_byte) >> FIN_SHIFT_COUNT;
+
+        msg->is_fragmented = df->fin;
+
+        df->opcode = cur_byte << 1;
+        df->opcode = df->opcode >> 1;
+        DEBUG("opcode: %s", wrap_char2str(df->opcode));
+
+        if (df->opcode == OP_CTRL_CLOSE) {
+            return -1;
+        }
+
+        cur_byte = df->data[++index];
+        // MASK
+        df->masked = (HEX_0xFF & cur_byte) >> MASK_SHIFT_COUNT;
+
+        // Payload len byte
+        df->payload_len = cur_byte << 1;
+        df->payload_len = df->payload_len >> 1;
+
+        DEBUG("Payload len(temp): %d", df->payload_len);
+
+        if (df->payload_len == PL_LEN_VAL_127) {
+            // Path 3: Payload len == 127 ext payload len 64 mask start at byte 10
+            // combine 8 bytes into final length
+            cur_byte = df->data[++index];
+            df->payload_final_len = cur_byte;
+            df->payload_final_len = df->payload_final_len << 8;
+
+            for (int i = 0; i < 6; ++i) {
+                cur_byte = df->data[++index];
+                df->payload_final_len += cur_byte;
+                df->payload_final_len = df->payload_final_len << 8;
+            }
+
+            cur_byte = df->data[++index];
+            df->payload_final_len += cur_byte;
+        } else if (df->payload_len == PL_LEN_VAL_126) {
+            // Path 2: Payload len == 126 ext payload len 16 mask start at byte 4
+            // combine 8 bytes into final length
+            cur_byte = df->data[++index];
+            df->payload_final_len = cur_byte;
+            df->payload_final_len = df->payload_final_len << 8;
+
+            cur_byte = df->data[++index];
+            df->payload_final_len += cur_byte;
+        } else {
+            // Path 1: Payload len < 126 mask start at byte 2
+            df->payload_final_len = df->payload_len;
+        }
+
+        // Masking-key (Extended payload length is 16 or 64)
+        int i = 0;
+        do {
+            cur_byte = df->data[++index];
+            df->mask_key[i] = cur_byte;
+        } while (++i < 4);
+
+        df->frame_header_handled = 1;
+        DEBUG("payload_final_len: %llu", df->payload_final_len);
+    }
+
+    // rest sequence buffer of frame
+    // unmask data now
+
+    int i;
+    for (i = index; i < df->cur_buf_len; ++i) {
+        cur_byte = df->data[i];
+
+        df->unmasked_payload[df->unmask_buffer_index] = cur_byte ^ (df->mask_key[df->mask_key_index]);
+        ++df->mask_key_index;
+        if (df->mask_key_index == 4) df->mask_key_index = 0;
+
+    }
+
+    return 1;
+}
+
+int handle_single_frame(message *msg) {
     struct data_frame df;
     memset(&df, 0, sizeof(df));
 
-repeat:
-    read_frame_into_buffer(fd, &df);
-    // FIN and OPCODE byte
-    // retrieve fin and opcode
-    read_byte_from_frame_by_offset(&df, 0);
-
-    df.fin = (HEX_0xFF & *df.cur_byte) >> FIN_SHIFT_COUNT;
-
-    if (df.fin) {
-        // unfragmented frame
-    } else {
-        // fragmented frame
-    }
-    df.opcode = *df.cur_byte << 1;
-    df.opcode = df.opcode >> 1;
-    DEBUG("opcode: %s", wrap_char2str(df.opcode));
-
-    if (df.opcode == OP_CTRL_CLOSE) {
-        return -1;
-    }
-
-    // MASK and Payload len byte
-    read_byte_from_frame_by_offset(&df, 1);
-    df.masked = (HEX_0xFF & *df.cur_byte) >> MASK_SHIFT_COUNT;
-    df.payload_len = *df.cur_byte << 1;
-    df.payload_len = df.payload_len >> 1;
-
-    DEBUG("Payload len(temp): %d", df.payload_len);
-
-    if (df.payload_len == PL_LEN_VAL_127) {
-        // Path 3: Payload len == 127 ext payload len 64 mask start at byte 10
-        // combine 8 bytes into final length
-        read_byte_from_frame_by_offset(&df, 1);
-        df.payload_final_len = *df.cur_byte;
-        df.payload_final_len = df.payload_final_len << 8;
-
-        for (int i = 0; i < 6; ++i) {
-            read_byte_from_frame_by_offset(&df, 1);
-            df.payload_final_len += *df.cur_byte;
-            df.payload_final_len = df.payload_final_len << 8;
-        }
-
-        read_byte_from_frame_by_offset(&df, 1);
-        df.payload_final_len += *df.cur_byte;
-    } else if (df.payload_len == PL_LEN_VAL_126) {
-        // Path 2: Payload len == 126 ext payload len 16 mask start at byte 4
-        // combine 8 bytes into final length
-        read_byte_from_frame_by_offset(&df, 1);
-        df.payload_final_len = *df.cur_byte;
-        df.payload_final_len = df.payload_final_len << 8;
-
-        read_byte_from_frame_by_offset(&df, 1);
-        df.payload_final_len += *df.cur_byte;
-    } else {
-        // Path 1: Payload len < 126 mask start at byte 2
-        df.payload_final_len = df.payload_len;
-    }
-
-    // Masking-key (Extended payload length is 16 or 64)
-    int i = 0;
-    do {
-        read_byte_from_frame_by_offset(&df, 1);
-        df.mask_key[i] = *df.cur_byte;
-    } while (++i < 4);
-
-    DEBUG("payload_final_len: %llu", df.payload_final_len);
-    // unmask data now
-
-    int offset = 1;
     while (1) {
-        read_byte_from_frame_by_offset(&df, offset);
-        df.unmasked_payload[df.r_single_count] = *df.cur_byte ^ (df.mask_key[df.r_count % 4]);
-        ++df.r_count;
-        ++df.r_single_count;
-
-        if (df.r_single_count == MAX_FRAME_SINGLE_BUF_SIZE) {
-            DEBUG("(%d)PAYLOAD: %s", df.r_count, df.unmasked_payload);
-
-            if (df.fin) {
-                read_frame_into_buffer(fd, &df);
-                offset = 0;
-                continue;
-            } else {
-                goto repeat;
-            }
+        // Read until meet max length
+        if (read_into_buffer(msg, &df) == -1) {
+            ERROR("_handle_single_frame error: -1");
+            return (-1);
         }
-        offset = 1;
+        DEBUG("cur_buf_len: %llu",  df.cur_buf_len);
+        if (df.cur_buf_len == 0) continue;
 
-        if (df.r_count == df.payload_final_len) {
-            break;
+        if (handle_buffer(msg, &df) == -1) return (-1);
+
+        if (df.payload_read_len == df.payload_final_len) {
+            // Single frame read done
+            DEBUG("PAYLOAD: %s",  df.unmasked_payload);
+            return (1);
         }
     }
-
-    DEBUG("PAYLOAD: %s",  df.unmasked_payload);
-
-    write(fd, df.unmasked_payload, MAX_FRAME_SINGLE_BUF_SIZE);
-
-    return 0;
 }

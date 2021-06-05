@@ -17,9 +17,11 @@
 #include "handshake.h"
 #include "base.h"
 
+#define MAX_CONN 10
+
 // Single frame can be split into sort of buffers
 // this macro is max size of single buffer in byte
-#define MAX_FRAME_SINGLE_BUF_SIZE       128
+#define MAX_FRAME_SINGLE_BUF_SIZE       512
 
 // Max queue size of listen()
 #define	MAX_LISTEN_Q		1024
@@ -67,12 +69,31 @@
 
 #define OP_CTRL_CLOSE 0x8
 
+
+
+struct message_t {
+    // From source
+    int source_fd;
+    // To target
+    int target_fd;
+    unsigned char type;
+    // message
+    unsigned char is_fragmented;
+    unsigned char is_handshake;
+};
+
+struct client_t {
+    struct sockaddr_in cli_addr;
+
+    // CONNECTING
+    unsigned char status;
+};
+typedef struct message_t message;
+typedef struct client_t client;
+
 struct data_frame {
     // frame data
     unsigned char data[MAX_FRAME_SINGLE_BUF_SIZE];
-
-    // current byte
-    unsigned char *cur_byte;
 
     // bit [1] len=1
     unsigned char fin;
@@ -89,50 +110,50 @@ struct data_frame {
     // bit [9, 15] len=7
     unsigned char payload_len;
 
-    // final length of payload
+    // final length of payload, NOT message total length
     unsigned long long payload_final_len;
+
+    // Current payload read length
+    unsigned long long payload_read_len;
+
+    // Current buffer length (haw many bytes read from source fd)
+    unsigned long long cur_buf_len;
+
+    // If header of frame handled
+    unsigned char frame_header_handled;
+
+    // Cycle: 0 -> 1 -> 2 -> 3 -> 0
+    unsigned char mask_key_index;
 
     // if len of ext_payload_len = 16 then bit [32，63]
     // else bit [80, 111]
     // length is 32-bit
     unsigned char mask_key[4];
 
-    // Read count for payload data bytes reading
-    // this will never set to 0 until a message is finish
-    unsigned int r_count;
-
-    // Read count for single buffer
-    // when over MAX_FRAME_SINGLE_BUF_SIZE this will be set to 0
-    unsigned int r_single_count;
-
     // Unmasked payload data buffer
     unsigned char unmasked_payload[MAX_FRAME_SINGLE_BUF_SIZE];
+
+    unsigned int unmask_buffer_index;
 };
 
-struct message {
-    struct sockaddr_in cli_addr;
-    int fd;
-    unsigned char type;
-    unsigned char is_fragmented;
-    unsigned char is_handshake;
-};
-
-struct client {
-    // CONNECTING
-    unsigned char status;
-
-    int fd;
-};
-
-int handle_handshake_opening(struct message *msg);
+int handle_handshake_opening(message *msg);
 void do_sec_key_sha1(char *key, unsigned char **result);
 
-int read_frame_into_buffer(int fd, struct data_frame *df);
-void read_byte_from_frame_by_offset(struct data_frame *df, unsigned char offset);
 
-int handle_data_frame(int fd);
+int read_into_buffer(message *msg, struct data_frame *df);
 
-void handle_message_received(struct message *msg);
+// Handle new connection
+void handle_conn(int conn_fd, struct sockaddr_in *cli_addr);
+void handle_message(message *msg);
+int handle_single_frame(message *msg);
+int handle_buffer(message *msg, struct data_frame *df);
+
 void dump_data_frame(struct data_frame *df);
+
+char contains_client(client*);
+int add_client(client*);
+int get_client_index(struct sockaddr_in *cli_addr);
+void remove_client(int idx);
+client get_client(int idx);
 
 #endif //WEBSOCKET_SERVER_WS_H
