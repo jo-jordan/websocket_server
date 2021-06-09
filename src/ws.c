@@ -101,13 +101,13 @@ void dump_data_frame(struct data_frame *df) {
     tmp = malloc(32);
     for (int i = 0; i < MAX_FRAME_SINGLE_BUF_SIZE; ++i) {
         if (nlc == 16) {
-            nlc = -1;
+            nlc = 0;
             DEBUG("%s", tmp);
             strcpy(tmp, "");
-        } else {
-            strcat(tmp, wrap_char2str(rbuff[i]));
-            strcat(tmp, " ");
         }
+        strcat(tmp, wrap_char2str(rbuff[i]));
+        strcat(tmp, " ");
+
         ++nlc;
     }
     strcpy(tmp, "");
@@ -176,8 +176,9 @@ void handle_conn(int conn_fd, struct sockaddr_in *cli_addr) {
 }
 
 void handle_message(message *msg) {
+    DEBUG("START HANDLE MESSAGE...");
     while (1) {
-        DEBUG("START HANDLE MESSAGE...");
+        DEBUG("START HANDLE SINGLE FRAME...");
         struct data_frame df;
         memset(&df, 0, sizeof(df));
         // Initial read
@@ -223,7 +224,7 @@ int read_into_buffer(message *msg, struct data_frame *df) {
     df->payload_read_len+=rn;
     df->cur_buf_len = rn;
 
-//    dump_data_frame(df);
+    dump_data_frame(df);
     DEBUG("read_into_buffer : %zd", rn);
 
     return (1);
@@ -233,8 +234,9 @@ int handle_buffer(message *msg, struct data_frame *df) {
     int index;
 
     index = 0;
-    unsigned char cur_byte = df->data[index];
+
     if (df->frame_header_handled == 0) {
+        unsigned char cur_byte = df->data[index];
         // Head buffer of frame
         df->fin = (HEX_0xFF & cur_byte) >> FIN_SHIFT_COUNT;
 
@@ -242,7 +244,7 @@ int handle_buffer(message *msg, struct data_frame *df) {
 
         df->opcode = cur_byte << 1;
         df->opcode = df->opcode >> 1;
-        DEBUG("opcode: %s", wrap_char2str(df->opcode));
+        DEBUG("FIN: %d, opcode: %s", df->fin, wrap_char2str(df->opcode));
 
         if (df->opcode == OP_CTRL_CLOSE) {
             return -1;
@@ -304,9 +306,11 @@ int handle_buffer(message *msg, struct data_frame *df) {
     // rest sequence buffer of frame
     // unmask data now
 
+    if (index > 0) ++index; // if index > 0 then this will be second time
+
     int i;
-    for (i = index + 1; i < df->cur_buf_len; ++i) {
-        cur_byte = df->data[i];
+    for (i = index; i < df->cur_buf_len; ++i) {
+        unsigned char cur_byte = df->data[i];
 
         df->unmasked_payload[df->unmask_buffer_index++] = cur_byte ^ (df->mask_key[df->mask_key_index]);
         ++df->mask_key_index;
