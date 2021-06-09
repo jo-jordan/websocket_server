@@ -25,10 +25,10 @@
 #include "ws.h"
 #include "net_util.h"
 
-int handle_handshake_opening(message *msg) {
+int handle_handshake_opening(int fd) {
     ssize_t n;
     char req[MAX_HS_REQ_SIZE];
-    n = read(msg->source_fd, &req, sizeof(req));
+    n = read(fd, &req, sizeof(req));
     if (n < 0) {
         DEBUG("read error: %zd", n);
         return (-1);
@@ -63,12 +63,11 @@ int handle_handshake_opening(message *msg) {
     strcat(res, (const char *) result);
     strcat(res, TOKEN_SEP TOKEN_SEP);
 
-    ssize_t wn = write(msg->source_fd, res, strlen(res));
+    ssize_t wn = write(fd, res, strlen(res));
     DEBUG("response(size: %zd): %s", wn, res);
 
     free(res);
 
-    msg->is_handshake = 1;
     return 0;
 }
 
@@ -135,7 +134,6 @@ int add_client(client *cli) {
 
 void remove_client(int idx) {
     DEBUG("remove_client: %d", idx);
-    free(&(clients[idx]));
 }
 
 int get_client_index(struct sockaddr_in *cli_addr) {
@@ -156,55 +154,79 @@ void handle_conn(int conn_fd, struct sockaddr_in *cli_addr) {
     int idx = get_client_index(cli_addr);
     client cli;
     if (idx == -1) {
-
         idx = add_client(&cli);
 
         message *msg;
         msg = malloc(sizeof(message));
         msg->source_fd = conn_fd;
         msg->is_fragmented = 0;
-        msg->is_handshake = 0;
 
         cli.cli_addr = *cli_addr;
 
-        handle_handshake_opening(msg);
+        handle_handshake_opening(conn_fd);
+
         DEBUG("connection from %s, port %d (handshake done.)",
               get_conn_addr(cli_addr),
               get_conn_port(cli_addr));
 
-        cli = get_client(idx);
         handle_message(msg);
         remove_client(idx);
+        exit(0);
     }
-
-
 }
 
 void handle_message(message *msg) {
     while (1) {
-        if (handle_single_frame(msg) == -1) {
-            return;
+        DEBUG("START HANDLE MESSAGE...");
+        struct data_frame df;
+        memset(&df, 0, sizeof(df));
+        // Initial read
+        int rib = read_into_buffer(msg, &df);
+        if (rib == 0 || rib == -1) break;
+        if (handle_single_frame(msg, &df) == -1) return;
+    }
+}
+
+int handle_single_frame(message *msg, struct data_frame *df) {
+    while (1) {
+        DEBUG("cur_buf_len: %llu",  df->cur_buf_len);
+        if (df->cur_buf_len == 0) break;
+
+        if (handle_buffer(msg, df) == -1) return (-1);
+
+        if (df->payload_read_len == (df->payload_final_len + df->header_size)) {
+            // Single frame read done
+            DEBUG("PAYLOAD: %s",  df->unmasked_payload);
+            return (1);
+        }
+
+        // Read until meet max length
+        int rib = read_into_buffer(msg, df);
+        if (rib == -1) {
+            ERROR("_handle_single_frame error: -1");
+            return (-1);
         }
     }
-
 }
 
 int read_into_buffer(message *msg, struct data_frame *df) {
     memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
-    DEBUG("2: fd %d", msg->source_fd);
-    ssize_t rn = read(msg->source_fd, df->data, sizeof(df->data));
+    ssize_t rn = read(msg->source_fd, df->data, MAX_FRAME_SINGLE_BUF_SIZE);
     df->cur_buf_len = 0;
 
     if (rn < 0) {
         ERROR("read_into_buffer error: %zd", rn);
         return (-1);
     }
+    if (rn == 0) return 0;
 
     df->payload_read_len+=rn;
     df->cur_buf_len = rn;
+
+//    dump_data_frame(df);
     DEBUG("read_into_buffer : %zd", rn);
 
-    return (0);
+    return (1);
 }
 
 int handle_buffer(message *msg, struct data_frame *df) {
@@ -251,6 +273,7 @@ int handle_buffer(message *msg, struct data_frame *df) {
 
             cur_byte = df->data[++index];
             df->payload_final_len += cur_byte;
+            df->header_size = 14;
         } else if (df->payload_len == PL_LEN_VAL_126) {
             // Path 2: Payload len == 126 ext payload len 16 mask start at byte 4
             // combine 8 bytes into final length
@@ -260,9 +283,11 @@ int handle_buffer(message *msg, struct data_frame *df) {
 
             cur_byte = df->data[++index];
             df->payload_final_len += cur_byte;
+            df->header_size = 8;
         } else {
             // Path 1: Payload len < 126 mask start at byte 2
             df->payload_final_len = df->payload_len;
+            df->header_size = 6;
         }
 
         // Masking-key (Extended payload length is 16 or 64)
@@ -280,37 +305,13 @@ int handle_buffer(message *msg, struct data_frame *df) {
     // unmask data now
 
     int i;
-    for (i = index; i < df->cur_buf_len; ++i) {
+    for (i = index + 1; i < df->cur_buf_len; ++i) {
         cur_byte = df->data[i];
 
-        df->unmasked_payload[df->unmask_buffer_index] = cur_byte ^ (df->mask_key[df->mask_key_index]);
+        df->unmasked_payload[df->unmask_buffer_index++] = cur_byte ^ (df->mask_key[df->mask_key_index]);
         ++df->mask_key_index;
         if (df->mask_key_index == 4) df->mask_key_index = 0;
-
     }
 
     return 1;
-}
-
-int handle_single_frame(message *msg) {
-    struct data_frame df;
-    memset(&df, 0, sizeof(df));
-
-    while (1) {
-        // Read until meet max length
-        if (read_into_buffer(msg, &df) == -1) {
-            ERROR("_handle_single_frame error: -1");
-            return (-1);
-        }
-        DEBUG("cur_buf_len: %llu",  df.cur_buf_len);
-        if (df.cur_buf_len == 0) continue;
-
-        if (handle_buffer(msg, &df) == -1) return (-1);
-
-        if (df.payload_read_len == df.payload_final_len) {
-            // Single frame read done
-            DEBUG("PAYLOAD: %s",  df.unmasked_payload);
-            return (1);
-        }
-    }
 }

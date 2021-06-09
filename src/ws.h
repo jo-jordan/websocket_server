@@ -27,7 +27,7 @@
 #define	MAX_LISTEN_Q		1024
 
 // Max size of handshake request message size in byte
-#define	MAX_HS_REQ_SIZE		512
+#define	MAX_HS_REQ_SIZE		1024
 
 // Max size of handshake response message size in byte
 #define MAX_HS_RES_SIZE     180
@@ -79,7 +79,6 @@ struct message_t {
     unsigned char type;
     // message
     unsigned char is_fragmented;
-    unsigned char is_handshake;
 };
 
 struct client_t {
@@ -107,6 +106,8 @@ struct data_frame {
     // bit [8] len=1
     unsigned char masked;
 
+    // header length in bytes
+    unsigned char header_size;
     // bit [9, 15] len=7
     unsigned char payload_len;
 
@@ -136,7 +137,7 @@ struct data_frame {
     unsigned int unmask_buffer_index;
 };
 
-int handle_handshake_opening(message *msg);
+int handle_handshake_opening(int fd);
 void do_sec_key_sha1(char *key, unsigned char **result);
 
 
@@ -145,7 +146,7 @@ int read_into_buffer(message *msg, struct data_frame *df);
 // Handle new connection
 void handle_conn(int conn_fd, struct sockaddr_in *cli_addr);
 void handle_message(message *msg);
-int handle_single_frame(message *msg);
+int handle_single_frame(message *msg, struct data_frame *df);
 int handle_buffer(message *msg, struct data_frame *df);
 
 void dump_data_frame(struct data_frame *df);
