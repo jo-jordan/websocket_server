@@ -5,7 +5,7 @@ Implements according to [RFC6455](https://datatracker.ietf.org/doc/rfc6455/).
 - [x] Handshake opening
 - [x] Handshake closing
 - [x] Unmask single frame payload
-- [ ] Unmask multiple frames payload
+- [x] Unmask multiple frames payload
 - [ ] Ping & Pong 
 - [ ] Rules check
 - [ ] Security stuff

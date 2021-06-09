@@ -98,7 +98,7 @@ void dump_data_frame(struct data_frame *df) {
     unsigned char *rbuff = df->data;
     int nlc = 0;
     char *tmp;
-    tmp = malloc(32);
+    tmp = malloc(144);
     for (int i = 0; i < MAX_FRAME_SINGLE_BUF_SIZE; ++i) {
         if (nlc == 16) {
             nlc = 0;
@@ -182,7 +182,7 @@ void handle_message(message *msg) {
         struct data_frame df;
         memset(&df, 0, sizeof(df));
         // Initial read
-        int rib = read_into_buffer(msg, &df);
+        int rib = read_into_buffer(msg, &df, MAX_FRAME_SINGLE_BUF_SIZE);
         if (rib == 0 || rib == -1) break;
         if (handle_single_frame(msg, &df) == -1) return;
     }
@@ -191,9 +191,15 @@ void handle_message(message *msg) {
 int handle_single_frame(message *msg, struct data_frame *df) {
     while (1) {
         DEBUG("cur_buf_len: %llu",  df->cur_buf_len);
-        if (df->cur_buf_len == 0) break;
+        if (df->cur_buf_len == 0) {
+            ERROR("df->cur_buf_len == 0");
+            break;
+        }
 
-        if (handle_buffer(msg, df) == -1) return (-1);
+        if (handle_buffer(msg, df) == -1) {
+            ERROR("handle_buffer -1");
+            return (-1);
+        }
 
         if (df->payload_read_len == (df->payload_final_len + df->header_size)) {
             // Single frame read done
@@ -201,8 +207,14 @@ int handle_single_frame(message *msg, struct data_frame *df) {
             return (1);
         }
 
+        // Each frame has it's own max size we should control the last buffer size always inner it.
+        unsigned long long next_read_size = MAX_FRAME_SINGLE_BUF_SIZE;
+        if (df->payload_read_len + MAX_FRAME_SINGLE_BUF_SIZE > (df->payload_final_len + df->header_size)) {
+            next_read_size = (df->payload_final_len + df->header_size) - df->payload_read_len;
+        }
+
         // Read until meet max length
-        int rib = read_into_buffer(msg, df);
+        int rib = read_into_buffer(msg, df, next_read_size);
         if (rib == -1) {
             ERROR("_handle_single_frame error: -1");
             return (-1);
@@ -210,9 +222,9 @@ int handle_single_frame(message *msg, struct data_frame *df) {
     }
 }
 
-int read_into_buffer(message *msg, struct data_frame *df) {
+int read_into_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size) {
     memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
-    ssize_t rn = read(msg->source_fd, df->data, MAX_FRAME_SINGLE_BUF_SIZE);
+    ssize_t rn = read(msg->source_fd, df->data, next_read_size);
     df->cur_buf_len = 0;
 
     if (rn < 0) {
@@ -224,7 +236,7 @@ int read_into_buffer(message *msg, struct data_frame *df) {
     df->payload_read_len+=rn;
     df->cur_buf_len = rn;
 
-    dump_data_frame(df);
+//    dump_data_frame(df);
     DEBUG("read_into_buffer : %zd", rn);
 
     return (1);
@@ -312,6 +324,10 @@ int handle_buffer(message *msg, struct data_frame *df) {
     for (i = index; i < df->cur_buf_len; ++i) {
         unsigned char cur_byte = df->data[i];
 
+        if (df->unmask_buffer_index == MAX_UNMASK_BUF_SIZE) {
+            DEBUG("FBI WARN");
+            df->unmask_buffer_index = 0;
+        }
         df->unmasked_payload[df->unmask_buffer_index++] = cur_byte ^ (df->mask_key[df->mask_key_index]);
         ++df->mask_key_index;
         if (df->mask_key_index == 4) df->mask_key_index = 0;

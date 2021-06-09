@@ -22,6 +22,8 @@
 // Single frame can be split into sort of buffers
 // this macro is max size of single buffer in byte
 #define MAX_FRAME_SINGLE_BUF_SIZE       512
+#define MAX_UNMASK_BUF_SIZE       81920
+
 
 // Max queue size of listen()
 #define	MAX_LISTEN_Q		1024
@@ -132,16 +134,16 @@ struct data_frame {
     unsigned char mask_key[4];
 
     // Unmasked payload data buffer
-    unsigned char unmasked_payload[MAX_FRAME_SINGLE_BUF_SIZE];
+    unsigned char unmasked_payload[MAX_UNMASK_BUF_SIZE];
 
-    unsigned int unmask_buffer_index;
+    unsigned long long unmask_buffer_index;
 };
 
 int handle_handshake_opening(int fd);
 void do_sec_key_sha1(char *key, unsigned char **result);
 
 
-int read_into_buffer(message *msg, struct data_frame *df);
+int read_into_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size);
 
 // Handle new connection
 void handle_conn(int conn_fd, struct sockaddr_in *cli_addr);
