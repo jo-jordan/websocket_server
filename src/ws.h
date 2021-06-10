@@ -22,7 +22,12 @@
 // Single frame can be split into sort of buffers
 // this macro is max size of single buffer in byte
 #define MAX_FRAME_SINGLE_BUF_SIZE       512
+
+// Data after unmasked buffer size
 #define MAX_UNMASK_BUF_SIZE       81920
+
+// Frame size to client
+#define CLI_FRAME_SIZE 2048
 
 
 // Max queue size of listen()
@@ -150,6 +155,8 @@ void handle_conn(int conn_fd, struct sockaddr_in *cli_addr);
 void handle_message(message *msg);
 int handle_single_frame(message *msg, struct data_frame *df);
 int handle_buffer(message *msg, struct data_frame *df);
+
+void send_to_client(int conn_fd);
 
 void dump_data_frame(struct data_frame *df);
 

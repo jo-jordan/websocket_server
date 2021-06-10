@@ -150,6 +150,10 @@ client get_client(int idx) {
     return clients[idx];
 }
 
+void send_to_client(int conn_fd) {
+
+}
+
 void handle_conn(int conn_fd, struct sockaddr_in *cli_addr) {
     int idx = get_client_index(cli_addr);
     client cli;
