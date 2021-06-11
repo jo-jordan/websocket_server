@@ -21,6 +21,11 @@
  * */
 void start_serve();
 void sig_child(int signo);
+void sig_int(int sig);
+void sig_quit(int sig);
+void sig_term(int sig);
+
+int connfd, listenfd;
 
 int main() {
     start_serve();
@@ -34,8 +39,28 @@ void sig_child(int signo) {
     return;
 }
 
+void sig_int(int sig) {
+    close(connfd);
+    close(listenfd);
+    DEBUG("SIGINT: %d", sig);
+    exit(0);
+}
+
+void sig_quit(int sig) {
+    close(connfd);
+    close(listenfd);
+    DEBUG("SIGQUIT: %d", sig);
+    exit(0);
+}
+
+void sig_term(int sig) {
+    close(connfd);
+    close(listenfd);
+    DEBUG("SIGTERM: %d", sig);
+    exit(0);
+}
+
 void start_serve() {
-    int connfd, listenfd;
     socklen_t len;
 
     // socket
@@ -60,6 +85,9 @@ void start_serve() {
     DEBUG("server up.");
 
     signal(SIGCHLD, sig_child);
+    signal(SIGINT, sig_int);
+    signal(SIGQUIT, sig_quit);
+    signal(SIGTERM, sig_term);
 
     for (;;) {
         len = sizeof(cli_addr);
