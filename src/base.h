@@ -7,6 +7,7 @@
 
 #include <stdlib.h>
 #include <strings.h>
+#include <string.h>
 
 /* Macros for min/max. */
 #ifndef MIN
