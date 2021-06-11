@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <string.h>
+#include <sys/wait.h>
 
 /* Macros for min/max. */
 #ifndef MIN
