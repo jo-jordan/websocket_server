@@ -156,7 +156,7 @@ void handle_message(message *msg);
 int handle_single_frame(message *msg, struct data_frame *df);
 int handle_buffer(message *msg, struct data_frame *df);
 
-void send_to_client(int conn_fd);
+void send_to_client(int);
 
 void dump_data_frame(struct data_frame *df);
 
