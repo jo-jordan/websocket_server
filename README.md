@@ -4,12 +4,20 @@ Implements according to [RFC6455](https://datatracker.ietf.org/doc/rfc6455/).
 # TODO List
 - [x] Handshake opening
 - [x] Handshake closing
-- [x] Unmask single frame payload
-- [x] Unmask multiple frames payload
-- [ ] Ping & Pong 
-- [ ] Rules check
+- [x] Receiving data from client
+    - [x] Unmask single frame payload
+    - [x] Unmask multiple frames payload
+    - [ ] Ping & Pong
+- [ ] Sending data to client
+- [ ] All platform supported
+    - [x] Linux
+    - [x] Darwin
+    - [ ] Windows
+- [ ] Using Event loop with Reactor pattern
+    - [x] Multiple process for now
+    - [ ] Using system call `poll`
+    - [ ] Event loop
+- [ ] RFC6455 validations
 - [ ] Security stuff
-- [ ] All platform supported (Darwin only maybe for now)
-- [ ] Using Event loop (Multiple process for now)
 - [ ] Considering distributed situation
 
