@@ -18,10 +18,10 @@ int add_client(client *cli) {
     return -1;
 }
 
-void remove_client(int fd) {
+void remove_client(unsigned long long uid) {
     for (int i = 0; i < MAX_CONN; i++) {
         if (clients[i] == NULL) continue;
-        if (clients[i]->conn_fd == fd) {
+        if (clients[i]->uid == uid) {
             clients[i] = NULL;
             --cli_size;
             DEBUG("remove_client: %d", i);
@@ -31,12 +31,12 @@ void remove_client(int fd) {
     }
 }
 
-client *get_client_by_addr(int fd) {
+client *get_client_by_addr(unsigned long long uid) {
     for (int i = 0; i < MAX_CONN; ++i) {
         client *cli = clients[i];
 
         if (cli == NULL) continue;
-        if (cli->conn_fd == fd) return cli;
+        if (cli->uid == uid) return cli;
     }
     return NULL;
 }

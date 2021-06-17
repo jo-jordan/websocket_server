@@ -91,7 +91,9 @@ typedef struct message_t {
 typedef struct client_t {
     struct sockaddr_in cli_addr;
 
-    int conn_fd; /* In multiplexer model fd is unique to each connection */
+    unsigned long long uid; /* Unique to each connection */
+
+    char is_shaken;
 
     unsigned char status; /* TODO */
 } client;
