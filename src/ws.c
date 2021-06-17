@@ -23,6 +23,7 @@
  */
 
 #include "ws.h"
+#include "table.h"
 #include "net_util.h"
 
 int handle_handshake_opening(int fd) {
@@ -114,125 +115,67 @@ void dump_data_frame(struct data_frame *df) {
     free(tmp);
 }
 
-client clients[MAX_CONN];
-int cur_cli_count = 0;
-
-char contains_client(client *cli) {
-    for (int i = 0; i < MAX_CONN; ++i) {
-        if (cli->cli_addr.sin_addr.s_addr == clients[i].cli_addr.sin_addr.s_addr
-            && cli->cli_addr.sin_port == clients[i].cli_addr.sin_port) return 1;
-
-    }
-    return 0;
-}
-
-int add_client(client *cli) {
-    cli = malloc(sizeof(client));
-    clients[cur_cli_count++] = *cli;
-    return cur_cli_count;
-}
-
-void remove_client(int idx) {
-    DEBUG("remove_client: %d", idx);
-}
-
-int get_client_index(struct sockaddr_in *cli_addr) {
-    for (int i = 0; i < MAX_CONN; ++i) {
-        client cur_cli = clients[i];
-        if (cli_addr->sin_addr.s_addr == cur_cli.cli_addr.sin_addr.s_addr
-            && cli_addr->sin_port == cur_cli.cli_addr.sin_port) return i;
-
-    }
-    return -1;
-}
-
-client get_client(int idx) {
-    return clients[idx];
-}
-
 void send_to_client(int conn_fd) {
 
 }
 
-void handle_conn(int conn_fd, struct sockaddr_in *cli_addr) {
-    int idx = get_client_index(cli_addr);
-    client cli;
-    if (idx == -1) {
-        idx = add_client(&cli);
+int handle_conn(int conn_fd, client *cli) {
+    int rc;
+    message *msg;
+    msg = malloc(sizeof(message));
+    msg->source_fd = conn_fd;
+    msg->is_fragmented = 0;
 
-        message *msg;
-        msg = malloc(sizeof(message));
-        msg->source_fd = conn_fd;
-        msg->is_fragmented = 0;
+    DEBUG("START HANDLE SINGLE FRAME...");
+    struct data_frame df;
+    memset(&df, 0, sizeof(df));
 
-        cli.cli_addr = *cli_addr;
+    unsigned long long next_read_size = MAX_FRAME_SINGLE_BUF_SIZE;
 
-        handle_handshake_opening(conn_fd);
-
-        DEBUG("connection from %s, port %d (handshake done.)",
-              get_conn_addr(cli_addr),
-              get_conn_port(cli_addr));
-
-        handle_message(msg);
-        remove_client(idx);
-        exit(0);
-    }
-}
-
-void handle_message(message *msg) {
-    DEBUG("START HANDLE MESSAGE...");
     while (1) {
-        DEBUG("START HANDLE SINGLE FRAME...");
-        struct data_frame df;
-        memset(&df, 0, sizeof(df));
-        // Initial read
-        int rib = read_into_buffer(msg, &df, MAX_FRAME_SINGLE_BUF_SIZE);
-        if (rib == 0 || rib == -1) break;
-        if (handle_single_frame(msg, &df) == -1) return;
-    }
-}
+        // Read until meet max length
+        int rib = read_into_single_buffer(msg, &df, next_read_size);
+        if (rib == -1) {
+            ERROR("read_into_single_buffer error: -1");
+            return (-1);
+        }
 
-int handle_single_frame(message *msg, struct data_frame *df) {
-    while (1) {
-        DEBUG("cur_buf_len: %llu",  df->cur_buf_len);
-        if (df->cur_buf_len == 0) {
+        DEBUG("cur_buf_len: %llu",  df.cur_buf_len);
+        if (df.cur_buf_len == 0) {
             ERROR("df->cur_buf_len == 0");
             break;
         }
 
-        if (handle_buffer(msg, df) == -1) {
-            ERROR("handle_buffer -1");
+        rc = handle_single_buffer(msg, &df);
+        if (rc == -1) {
+            ERROR("handle_single_buffer -1");
             return (-1);
         }
+        if (rc == -2) {
+            return -2;
+        }
 
-        if (df->payload_read_len == (df->payload_final_len + df->header_size)) {
+        if (df.payload_read_len == (df.payload_final_len + df.header_size)) {
             // Single frame read done
-            DEBUG("PAYLOAD: %s",  df->unmasked_payload);
+            DEBUG("PAYLOAD: %s",  df.unmasked_payload);
             return (1);
         }
 
         // Each frame has it's own max size we should control the last buffer size always inner it.
-        unsigned long long next_read_size = MAX_FRAME_SINGLE_BUF_SIZE;
-        if (df->payload_read_len + MAX_FRAME_SINGLE_BUF_SIZE > (df->payload_final_len + df->header_size)) {
-            next_read_size = (df->payload_final_len + df->header_size) - df->payload_read_len;
-        }
-
-        // Read until meet max length
-        int rib = read_into_buffer(msg, df, next_read_size);
-        if (rib == -1) {
-            ERROR("_handle_single_frame error: -1");
-            return (-1);
+        if (df.payload_read_len + MAX_FRAME_SINGLE_BUF_SIZE > (df.payload_final_len + df.header_size)) {
+            next_read_size = (df.payload_final_len + df.header_size) - df.payload_read_len;
         }
     }
+    return 0;
 }
 
-int read_into_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size) {
+int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size) {
     memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
     ssize_t rn = read(msg->source_fd, df->data, next_read_size);
     df->cur_buf_len = 0;
 
     if (rn < 0) {
-        ERROR("read_into_buffer error: %zd", rn);
+        ERROR("read_into_single_buffer error: %zd", rn);
         return (-1);
     }
     if (rn == 0) return 0;
@@ -241,12 +184,12 @@ int read_into_buffer(message *msg, struct data_frame *df, unsigned long long nex
     df->cur_buf_len = rn;
 
 //    dump_data_frame(df);
-    DEBUG("read_into_buffer : %zd", rn);
+    DEBUG("read_into_single_buffer : %zd", rn);
 
     return (1);
 }
 
-int handle_buffer(message *msg, struct data_frame *df) {
+int handle_single_buffer(message *msg, struct data_frame *df) {
     int index;
 
     index = 0;
@@ -263,7 +206,7 @@ int handle_buffer(message *msg, struct data_frame *df) {
         DEBUG("FIN: %d, opcode: %s", df->fin, wrap_char2str(df->opcode));
 
         if (df->opcode == OP_CTRL_CLOSE) {
-            return -1;
+            return -2; /* Client Close */
         }
 
         cur_byte = df->data[++index];

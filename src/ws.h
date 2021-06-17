@@ -78,7 +78,7 @@
 
 
 
-struct message_t {
+typedef struct message_t {
     // From source
     int source_fd;
     // To target
@@ -86,16 +86,15 @@ struct message_t {
     unsigned char type;
     // message
     unsigned char is_fragmented;
-};
+} message;
 
-struct client_t {
+typedef struct client_t {
     struct sockaddr_in cli_addr;
 
-    // CONNECTING
-    unsigned char status;
-};
-typedef struct message_t message;
-typedef struct client_t client;
+    int conn_fd; /* In multiplexer model fd is unique to each connection */
+
+    unsigned char status; /* TODO */
+} client;
 
 struct data_frame {
     // frame data
@@ -144,26 +143,21 @@ struct data_frame {
     unsigned long long unmask_buffer_index;
 };
 
+// Hand shake
 int handle_handshake_opening(int fd);
 void do_sec_key_sha1(char *key, unsigned char **result);
 
 
-int read_into_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size);
+int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size);
 
-// Handle new connection
-void handle_conn(int conn_fd, struct sockaddr_in *cli_addr);
-void handle_message(message *msg);
-int handle_single_frame(message *msg, struct data_frame *df);
-int handle_buffer(message *msg, struct data_frame *df);
+// Receiving message
+int handle_conn(int conn_fd, client *);
+int handle_single_buffer(message *msg, struct data_frame *df);
 
+// Sending message
 void send_to_client(int);
 
+// Debug
 void dump_data_frame(struct data_frame *df);
-
-char contains_client(client*);
-int add_client(client*);
-int get_client_index(struct sockaddr_in *cli_addr);
-void remove_client(int idx);
-client get_client(int idx);
 
 #endif //WEBSOCKET_SERVER_WS_H
