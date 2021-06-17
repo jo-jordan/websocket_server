@@ -66,14 +66,13 @@ void sig_term(int sig) {
 
 void start_serve() {
     socklen_t len;
-    int close_conn, end_server, rc, on, timeout, nfds, current_size, i;
+    int end_server, rc, on, timeout, nfds, current_size, i;
     int new_fd;
     new_fd = -1;
     on = 1;
     nfds = 1;
     current_size = 0;
     end_server = 0;
-    close_conn = 0;
     struct pollfd fds[4096];
 
     // socket
@@ -167,14 +166,12 @@ void start_serve() {
             } else {
                 if (fds[i].revents & POLLIN) {
                     DEBUG("Descriptor %d is readable", fds[i].fd);
-                    close_conn = 0;
 
                     client *cli = get_client_by_addr(fds[i].fd);
                     if (cli == NULL) {
                         rc = handle_handshake_opening(fds[i].fd);
                         if (rc < 0) {
                             ERROR("handle_handshake_opening() failed");
-                            close_conn = 1;
 
                             close(fds[i].fd);
                             fds[i].fd = -1;
@@ -188,7 +185,6 @@ void start_serve() {
                         rc = handle_conn(fds[i].fd, cli);
                         if (rc == -2) {
                             ERROR("handle_conn() failed");
-                            close_conn = 1;
                             close(fds[i].fd);
                             remove_client(fds[i].fd);
                             fds[i].fd = -1;
