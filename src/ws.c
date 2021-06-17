@@ -22,8 +22,8 @@
 
  */
 
+#include <sys/errno.h>
 #include "ws.h"
-#include "table.h"
 #include "net_util.h"
 
 int handle_handshake_opening(int fd) {
@@ -119,14 +119,14 @@ void send_to_client(int conn_fd) {
 
 }
 
-int handle_conn(int conn_fd, client *cli) {
+int handle_conn(int conn_fd) {
     int rc;
     message *msg;
     msg = malloc(sizeof(message));
     msg->source_fd = conn_fd;
     msg->is_fragmented = 0;
 
-    DEBUG("START HANDLE SINGLE FRAME...");
+    DEBUG("START HANDLE CONN... fd: %d", conn_fd);
     struct data_frame df;
     memset(&df, 0, sizeof(df));
 
@@ -136,28 +136,29 @@ int handle_conn(int conn_fd, client *cli) {
         // Read until meet max length
         int rib = read_into_single_buffer(msg, &df, next_read_size);
         if (rib == -1) {
-            ERROR("read_into_single_buffer error: -1");
+            ERROR("read_into_single_buffer failed: -1");
             return (-1);
         }
 
-        DEBUG("cur_buf_len: %llu",  df.cur_buf_len);
+
         if (df.cur_buf_len == 0) {
-            ERROR("df->cur_buf_len == 0");
             break;
         }
 
         rc = handle_single_buffer(msg, &df);
         if (rc == -1) {
-            ERROR("handle_single_buffer -1");
+            ERROR("handle_single_buffer failed -1");
+            DEBUG("(-1)PAYLOAD size (in byte): %llu",  df.payload_read_len);
             return (-1);
         }
         if (rc == -2) {
+            DEBUG("(-2)PAYLOAD size (in byte): %llu",  df.payload_read_len);
             return -2;
         }
 
         if (df.payload_read_len == (df.payload_final_len + df.header_size)) {
             // Single frame read done
-            DEBUG("PAYLOAD: %s",  df.unmasked_payload);
+            DEBUG("(1)PAYLOAD size (in byte): %llu",  df.payload_read_len);
             return (1);
         }
 
@@ -166,15 +167,18 @@ int handle_conn(int conn_fd, client *cli) {
             next_read_size = (df.payload_final_len + df.header_size) - df.payload_read_len;
         }
     }
+
     return 0;
 }
 
 int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size) {
+repeat:
     memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
     ssize_t rn = read(msg->source_fd, df->data, next_read_size);
     df->cur_buf_len = 0;
 
     if (rn < 0) {
+        if (errno == EAGAIN) goto repeat;
         ERROR("read_into_single_buffer error: %zd", rn);
         return (-1);
     }
@@ -184,7 +188,6 @@ int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long l
     df->cur_buf_len = rn;
 
 //    dump_data_frame(df);
-    DEBUG("read_into_single_buffer : %zd", rn);
 
     return (1);
 }
@@ -216,8 +219,6 @@ int handle_single_buffer(message *msg, struct data_frame *df) {
         // Payload len byte
         df->payload_len = cur_byte << 1;
         df->payload_len = df->payload_len >> 1;
-
-        DEBUG("Payload len(temp): %d", df->payload_len);
 
         if (df->payload_len == PL_LEN_VAL_127) {
             // Path 3: Payload len == 127 ext payload len 64 mask start at byte 10
@@ -272,7 +273,6 @@ int handle_single_buffer(message *msg, struct data_frame *df) {
         unsigned char cur_byte = df->data[i];
 
         if (df->unmask_buffer_index == MAX_UNMASK_BUF_SIZE) {
-            DEBUG("FBI WARN");
             df->unmask_buffer_index = 0;
         }
         df->unmasked_payload[df->unmask_buffer_index++] = cur_byte ^ (df->mask_key[df->mask_key_index]);

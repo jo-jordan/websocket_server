@@ -153,7 +153,7 @@ void do_sec_key_sha1(char *key, unsigned char **result);
 int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size);
 
 // Receiving message
-int handle_conn(int conn_fd, client *);
+int handle_conn(int conn_fd);
 int handle_single_buffer(message *msg, struct data_frame *df);
 
 // Sending message

@@ -66,14 +66,15 @@ void sig_term(int sig) {
 
 void start_serve() {
     socklen_t len;
-    int end_server, rc, on, timeout, nfds, current_size, i;
+    int end_server, rc, on, timeout, nfds, i;
     int new_fd;
     new_fd = -1;
     on = 1;
     nfds = 1;
-    current_size = 0;
     end_server = 0;
     struct pollfd fds[4096];
+    const int OPEN_MAX = sysconf(_SC_OPEN_MAX);
+    unsigned long long uid = 7;
 
     // socket
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -128,7 +129,7 @@ void start_serve() {
         rc = poll(fds, nfds, timeout);
         if (rc < 0) {
             ERROR("poll() failed: %d", rc);
-            break;
+            continue;
         }
 
         if (rc == 0) {
@@ -136,66 +137,64 @@ void start_serve() {
             continue;
         }
 
-        current_size = nfds;
         DEBUG("Now ready sockets size %d", nfds);
-        for (i = 0; i < current_size; i++) {
-            if (fds[i].revents == 0) continue;
-            if (fds[i].fd == listenfd) {
-                DEBUG("Listening socket is readable");
-                do {
-                    len = sizeof(cli_addr);
-                    new_fd = accept(listenfd, (struct sockaddr *)&cli_addr, &len);
 
-                    if(new_fd < 0) {
-                        if (errno != EWOULDBLOCK) {
-                            ERROR("accept() error");
-                            end_server = 1;
-                        }
-                        break;
-                    }
+        if (fds[0].revents & POLLIN) {
+            len = sizeof(cli_addr);
+            new_fd = accept(listenfd, (struct sockaddr *)&cli_addr, &len);
 
-                    DEBUG("New incoming connection - %d", new_fd);
-                    DEBUG("connection from %s, port %d (handshake done.)",
-                          get_conn_addr(&cli_addr),
-                          get_conn_port(&cli_addr));
-
-                    fds[nfds].fd = new_fd;
-                    fds[nfds].events = POLLIN;
-                    nfds++;
-                } while (new_fd != -1);
-            } else {
-                if (fds[i].revents & POLLIN) {
-                    DEBUG("Descriptor %d is readable", fds[i].fd);
-
-                    client *cli = get_client_by_addr(fds[i].fd);
-                    if (cli == NULL) {
-                        rc = handle_handshake_opening(fds[i].fd);
-                        if (rc < 0) {
-                            ERROR("handle_handshake_opening() failed");
-
-                            close(fds[i].fd);
-                            fds[i].fd = -1;
-                        }
-                        cli = malloc(sizeof(client));
-                        cli->cli_addr = cli_addr;
-                        cli->conn_fd = fds[i].fd;
-                        add_client(cli);
-
-                    } else {
-                        rc = handle_conn(fds[i].fd, cli);
-                        if (rc == -2) {
-                            ERROR("handle_conn() failed");
-                            close(fds[i].fd);
-                            remove_client(fds[i].fd);
-                            fds[i].fd = -1;
-                        }
-                    }
-                } else { /* POLLERR POLLUP */
-                    close(fds[i].fd);
-                    remove_client(fds[i].fd);
-                    fds[i].fd = -1;
+            if(new_fd < 0) {
+                if (errno != EWOULDBLOCK) {
+                    ERROR("accept() error");
+                    end_server = 1;
                 }
-                if (fds[i].fd == -1) continue;
+                continue;
+            }
+
+            DEBUG("New incoming connection - %d", new_fd);
+            DEBUG("connection from %s, port %d",
+                  get_conn_addr(&cli_addr),
+                  get_conn_port(&cli_addr));
+
+            fds[nfds].fd = new_fd;
+            fds[nfds].events = POLLIN;
+            ++nfds;
+            continue;
+        }
+
+        for (i = 1; i < nfds; i++) {
+            if (fds[i].fd == -1) continue;
+            if (fds[i].revents & POLLIN) {
+                DEBUG("Descriptor %d is readable", fds[i].fd);
+
+                uid = cli_addr.sin_addr.s_addr;
+                uid = (uid << (sizeof(in_port_t) * 8)) + cli_addr.sin_port; /* IP + port */
+
+                client *cli = get_client_by_addr(uid);
+                if (cli == NULL || !cli->is_shaken) {
+                    rc = handle_handshake_opening(fds[i].fd);
+                    if (rc < 0) {
+                        ERROR("handle_handshake_opening() failed");
+
+                        close(fds[i].fd);
+                        fds[i].fd = -1;
+                    }
+
+                    DEBUG("handshake done, uid: %llu", uid);
+                    cli = malloc(sizeof(client));
+                    cli->cli_addr = cli_addr;
+                    cli->uid = uid;
+                    cli->is_shaken = 1;
+                    add_client(cli);
+                } else {
+                    rc = handle_conn(fds[i].fd);
+                    if (rc == -2) {
+                        ERROR("client closed");
+                        close(fds[i].fd);
+                        remove_client(fds[i].fd);
+                        fds[i].fd = -1;
+                    }
+                }
             }
         }
 
