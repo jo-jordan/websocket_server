@@ -62,9 +62,19 @@ void sig_term(int sig) {
 
 void start_serve() {
     socklen_t len;
+    int rc, on;
+    on = 1;
 
     // socket
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    // to reuse local address
+    rc = setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on));
+    if (rc < 0) {
+        ERROR("setsockopt() failed: %d", rc);
+        close(listenfd);
+        exit(-1);
+    }
 
     // bind
     struct sockaddr_in serv_addr, cli_addr;
