@@ -25,6 +25,7 @@
 #include <sys/errno.h>
 #include "ws.h"
 #include "net_util.h"
+#include "table.h"
 
 int handle_handshake_opening(int fd) {
     ssize_t n;
@@ -115,7 +116,30 @@ void dump_data_frame(struct data_frame *df) {
     free(tmp);
 }
 
-void send_to_client(int conn_fd) {
+void send_to_client(int sender_fd) {
+
+    for(int i = 0; i < cli_size; i++) {
+        int fd = clients[i]->fd;
+
+        if (fd == sender_fd) {
+            continue;
+        }
+        unsigned char buf[7];
+
+        memset(buf, 0, sizeof(buf));
+        // hello
+        // 0x81 0x05 0x48 0x65 0x6c 0x6c 0x6f
+        buf[0] = 0x81;
+        buf[1] = 0x05;
+        buf[2] = 0x48;
+        buf[3] = 0x65;
+        buf[4] = 0x6c;
+        buf[5] = 0x6c;
+        buf[6] = 0x6f;
+
+        write(clients[i]->fd, buf, sizeof(buf));
+    }
+
 
 }
 
@@ -159,6 +183,7 @@ int handle_conn(int conn_fd) {
         if (df.payload_read_len == (df.payload_final_len + df.header_size)) {
             // Single frame read done
             DEBUG("(1)PAYLOAD size (in byte): %llu",  df.payload_read_len);
+//            send_to_client(msg->source_fd);
             return (1);
         }
 

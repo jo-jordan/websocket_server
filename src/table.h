@@ -6,6 +6,9 @@
 #define WEBSOCKET_SERVER_TABLE_H
 
 #include "ws.h"
+static client *clients[MAX_CONN]; /* keyword static only for this file */
+static int cli_size = 0;
+
 // Table for connections
 int add_client(client*);
 client *get_client_by_addr(unsigned long long uid);

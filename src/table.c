@@ -3,8 +3,6 @@
 //
 #include "table.h"
 
-static client *clients[MAX_CONN];
-static int cli_size = 0;
 
 int add_client(client *cli) {
     for (int i = 0; i < MAX_CONN; i++) {

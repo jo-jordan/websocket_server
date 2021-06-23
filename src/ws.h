@@ -95,6 +95,8 @@ typedef struct client_t {
 
     char is_shaken;
 
+    int fd;
+
     unsigned char status; /* TODO */
 } client;
 
