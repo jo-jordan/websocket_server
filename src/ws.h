@@ -100,6 +100,11 @@ typedef struct client_t {
     unsigned char status; /* TODO */
 } client;
 
+// Table for connections
+int add_client(client*);
+client *get_client_by_addr(unsigned long long uid);
+void remove_client(unsigned long long uid);
+
 struct data_frame {
     // frame data
     unsigned char data[MAX_FRAME_SINGLE_BUF_SIZE];

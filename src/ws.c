@@ -25,7 +25,44 @@
 #include <sys/errno.h>
 #include "ws.h"
 #include "net_util.h"
-#include "table.h"
+
+static client *clients[MAX_CONN]; /* keyword static only for this file */
+static int cli_size = 0;
+
+int add_client(client *cli) {
+    for (int i = 0; i < MAX_CONN; i++) {
+        if (clients[i] == NULL) {
+            clients[i] = cli;
+            ++cli_size;
+            DEBUG("table size now: %d", cli_size);
+            return i;
+        }
+    }
+    return -1;
+}
+
+void remove_client(unsigned long long uid) {
+    for (int i = 0; i < MAX_CONN; i++) {
+        if (clients[i] == NULL) continue;
+        if (clients[i]->uid == uid) {
+            clients[i] = NULL;
+            --cli_size;
+            DEBUG("remove_client: %d", i);
+            DEBUG("table size now: %d", cli_size);
+            break;
+        }
+    }
+}
+
+client *get_client_by_addr(unsigned long long uid) {
+    for (int i = 0; i < MAX_CONN; ++i) {
+        client *cli = clients[i];
+
+        if (cli == NULL) continue;
+        if (cli->uid == uid) return cli;
+    }
+    return NULL;
+}
 
 int handle_handshake_opening(int fd) {
     ssize_t n;
@@ -118,12 +155,15 @@ void dump_data_frame(struct data_frame *df) {
 
 void send_to_client(int sender_fd) {
 
+    DEBUG("cli_size: %d", cli_size);
     for(int i = 0; i < cli_size; i++) {
         int fd = clients[i]->fd;
 
         if (fd == sender_fd) {
             continue;
         }
+
+        DEBUG("ready send to client: %d", fd);
         unsigned char buf[7];
 
         memset(buf, 0, sizeof(buf));
@@ -203,6 +243,7 @@ repeat:
     df->cur_buf_len = 0;
 
     if (rn < 0) {
+        if (errno == ECONNRESET) return -1; /* connection reset by client */
         if (errno == EAGAIN) goto repeat;
         ERROR("read_into_single_buffer error: %zd", rn);
         return (-1);

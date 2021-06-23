@@ -9,4 +9,4 @@ add_executable(websocket_server ./src/main.c ./src/handshake.h ./src/ws.h
         ./src/sha1.c
         ./src/base64.c
         ./src/base64.h
-        src/net_util.h src/net_util.c src/base.h src/base.c src/buf.h src/table.h src/table.c)
+        src/net_util.h src/net_util.c src/base.h src/base.c src/buf.h)

@@ -8,8 +8,8 @@
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/poll.h>
+#include <sys/syslimits.h>
 #include "ws.h"
-#include "table.h"
 #include "net_util.h"
 
 
@@ -25,11 +25,7 @@
  * */
 void start_serve();
 void sig_child(int signo);
-void sig_int(int sig);
-void sig_quit(int sig);
-void sig_term(int sig);
 
-int connfd, listenfd;
 
 int main() {
     start_serve();
@@ -40,41 +36,23 @@ void sig_child(int signo) {
     int stat;
     while((pid = waitpid(-1, &stat, WNOHANG)) > 0)
         DEBUG("child %d terminated", pid);
-    return;
-}
-
-void sig_int(int sig) {
-    close(connfd);
-    close(listenfd);
-    DEBUG("SIGINT: %d", sig);
-    exit(0);
-}
-
-void sig_quit(int sig) {
-    close(connfd);
-    close(listenfd);
-    DEBUG("SIGQUIT: %d", sig);
-    exit(0);
-}
-
-void sig_term(int sig) {
-    close(connfd);
-    close(listenfd);
-    DEBUG("SIGTERM: %d", sig);
-    exit(0);
 }
 
 void start_serve() {
     socklen_t len;
-    int end_server, rc, on, timeout, nfds, i;
-    int new_fd;
-    new_fd = -1;
-    on = 1;
-    nfds = 1;
-    end_server = 0;
-    struct pollfd fds[4096];
-    const int OPEN_MAX = sysconf(_SC_OPEN_MAX);
+    struct pollfd fds[OPEN_MAX];
     unsigned long long uid = 7;
+    struct sockaddr_in serv_addr, cli_addr;
+
+    int end_server, rc, on, timeout, nfds, i , maxi, n_ready;
+    int listenfd;
+    int new_fd = -1; /* for new incoming connection */
+    int sock_fd = -1;
+    on = 1;
+    nfds = 1; /* The nfds argument specifies the size of the fds array. */
+    end_server = 0;
+    n_ready = 0; /* each poll */
+    timeout = -1; /* timeout based on ms, INFTIM = -1 */
 
     // socket
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -96,7 +74,6 @@ void start_serve() {
     }
 
     // bind
-    struct sockaddr_in serv_addr, cli_addr;
     bzero(&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -113,36 +90,25 @@ void start_serve() {
     }
 
     signal(SIGCHLD, sig_child);
-    signal(SIGINT, sig_int);
-    signal(SIGQUIT, sig_quit);
-    signal(SIGTERM, sig_term);
 
     memset(fds, 0, sizeof(fds));
-    timeout = 60 * 60 * 1000; // timeout based on ms
 
-    fds[0].fd = listenfd;
-    fds[0].events = POLLIN;
+    fds[0].fd = listenfd; /* The first poolfd is always ths listening fd */
+    fds[0].events = POLLRDNORM;
+
+    for (i = 1; i < OPEN_MAX; i++) fds[i].fd = -1; /* -1 indicates available entry */
+
+    maxi = 0; /* max index into fds[] array */
 
     DEBUG("server up.");
-
     do {
-        rc = poll(fds, nfds, timeout);
-        if (rc < 0) {
-            ERROR("poll() failed: %d", rc);
-            continue;
-        }
-
-        if (rc == 0) {
-            ERROR("poll() timeout");
-            continue;
-        }
+        n_ready = poll(fds, maxi + 1, timeout);
 
         DEBUG("Now ready sockets size %d", nfds);
 
-        if (fds[0].revents & POLLIN) {
+        if (fds[0].revents & POLLRDNORM) {
             len = sizeof(cli_addr);
             new_fd = accept(listenfd, (struct sockaddr *)&cli_addr, &len);
-
             if(new_fd < 0) {
                 if (errno != EWOULDBLOCK) {
                     ERROR("accept() error");
@@ -151,27 +117,49 @@ void start_serve() {
                 continue;
             }
 
+            for (i = 1; i < OPEN_MAX; i++)
+                if (fds[i].fd < 0) {
+                    fds[i].fd = new_fd;
+                    break;
+                }
+            if (i == OPEN_MAX) {
+                ERROR("too many clients.");
+                exit(-1);
+            }
+            fds[i].events = POLLRDNORM;
+
+            if (i > maxi)
+                maxi = i;
+
             DEBUG("New incoming connection - %d", new_fd);
             DEBUG("connection from %s, port %d",
                   get_conn_addr(&cli_addr),
                   get_conn_port(&cli_addr));
 
-            fds[nfds].fd = new_fd;
-            fds[nfds].events = POLLIN;
-            ++nfds;
-            continue;
+            client *cli;
+            uid = cli_addr.sin_addr.s_addr;
+            uid = (uid << (sizeof(in_port_t) * 8)) + cli_addr.sin_port; /* IP + port */
+            cli = malloc(sizeof(client));
+            cli->cli_addr = cli_addr;
+            cli->uid = uid;
+            cli->is_shaken = 0;
+            cli->fd = new_fd;
+            add_client(cli);
+
+            if (--n_ready < 0) continue; /* no more readable fd, decrease means we already handle one */
         }
 
-        for (i = 1; i < nfds; i++) {
-            if (fds[i].fd == -1) continue;
-            if (fds[i].revents & POLLIN) {
+        for (i = 1; i <= maxi; i++) {
+            if ((sock_fd = fds[i].fd) < 0) continue;
+
+            if (fds[i].revents & (POLLHUP)) {
+                goto close_cli;
+            }
+            if (fds[i].revents & (POLLRDNORM | POLLERR)) {
                 DEBUG("Descriptor %d is readable", fds[i].fd);
 
-                uid = cli_addr.sin_addr.s_addr;
-                uid = (uid << (sizeof(in_port_t) * 8)) + cli_addr.sin_port; /* IP + port */
-
                 client *cli = get_client_by_addr(uid);
-                if (cli == NULL || !cli->is_shaken) {
+                if (!cli->is_shaken) {
                     rc = handle_handshake_opening(fds[i].fd);
                     if (rc < 0) {
                         ERROR("handle_handshake_opening() failed");
@@ -181,21 +169,28 @@ void start_serve() {
                     }
 
                     DEBUG("handshake done, uid: %llu", uid);
-                    cli = malloc(sizeof(client));
-                    cli->cli_addr = cli_addr;
-                    cli->uid = uid;
                     cli->is_shaken = 1;
-                    add_client(cli);
                 } else {
-                    rc = handle_conn(fds[i].fd);
+                    rc = handle_conn(sock_fd);
+                    if (rc == -1) goto close_cli;
+
+                    send_to_client(sock_fd);
+
+
                     if (rc == -2) {
-                        ERROR("client closed");
-                        close(fds[i].fd);
-                        remove_client(fds[i].fd);
-                        fds[i].fd = -1;
+                        goto close_cli;
                     }
+                    if (--nfds <= 0)
+                        continue;
                 }
             }
+            continue;
+        close_cli:
+            --nfds;
+            ERROR("client closed");
+            close(fds[i].fd);
+            remove_client(fds[i].fd);
+            fds[i].fd = -1;
         }
 
     } while (!end_server);
@@ -203,6 +198,7 @@ void start_serve() {
     for( i = 0; i < nfds; i++) {
         close(fds[i].fd);
     }
+
 }
 
 
@@ -238,6 +234,8 @@ Frame format:
      |12_____________|13_____________|14____________|15______________|
 
 
+0x81     0x06 48 65 6C 6C 6F
+10000001 00000110
 01101111 00000000 00000000 00000000
 
  mask: 11001000 10000001 10010010 11000010
