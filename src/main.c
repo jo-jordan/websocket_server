@@ -8,11 +8,10 @@
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/poll.h>
-#include <sys/syslimits.h>
 #include "ws.h"
 #include "net_util.h"
 
-
+#define OPEN_MAX 10240
 /*
  * handshake
  * - opening handshake
@@ -39,8 +38,6 @@ void sig_child(int signo) {
 }
 
 void start_serve() {
-    int test = 0b11111111;
-    DEBUG("%d", test &= ~(1UL << 7));
     socklen_t len;
     struct pollfd fds[OPEN_MAX];
     unsigned long long uid = 7;
