@@ -102,6 +102,7 @@ void start_serve() {
     DEBUG("server up.");
     do {
         n_ready = poll(fds, maxi + 1, timeout);
+        if (n_ready <= 0) continue;
 
         DEBUG("Now ready sockets size %d", nfds);
 
