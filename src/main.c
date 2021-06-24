@@ -105,7 +105,7 @@ void start_serve() {
             continue;
         }
 
-        DEBUG("Now ready sockets size %d", n_ready);
+        DEBUG("Now ready sockets size %d, errno", n_ready, errno);
 
         if (fds[0].revents & POLLRDNORM) {
             len = sizeof(cli_addr);

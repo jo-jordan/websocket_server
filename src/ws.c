@@ -176,7 +176,7 @@ void dump_data_buf(const unsigned char buf[], unsigned long long size) {
 
 void send_to_client(int sender_fd, const unsigned char header[], const unsigned char buf[], unsigned int header_size,
                     unsigned long long size) {
-    int i, p;
+    int i, p, wc;
 
     /* trim buf */
     for(p = 0; p < size; p++) {
