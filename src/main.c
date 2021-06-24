@@ -43,12 +43,11 @@ void start_serve() {
     unsigned long long uid = 7;
     struct sockaddr_in serv_addr, cli_addr;
 
-    int end_server, rc, on, timeout, nfds, i , maxi, n_ready;
+    int end_server, rc, on, timeout, i , maxi, n_ready;
     int listenfd;
     int new_fd = -1; /* for new incoming connection */
     int sock_fd = -1;
     on = 1;
-    nfds = 1; /* The nfds argument specifies the size of the fds array. */
     end_server = 0;
     n_ready = 0; /* each poll */
     timeout = -1; /* timeout based on ms, INFTIM = -1 */
@@ -104,7 +103,7 @@ void start_serve() {
         n_ready = poll(fds, maxi + 1, timeout);
         if (n_ready <= 0) continue;
 
-        DEBUG("Now ready sockets size %d", nfds);
+        DEBUG("Now ready sockets size %d", n_ready);
 
         if (fds[0].revents & POLLRDNORM) {
             len = sizeof(cli_addr);
@@ -177,13 +176,13 @@ void start_serve() {
                     if (rc == -2) {
                         goto close_cli;
                     }
-                    if (--nfds <= 0)
+                    if (--n_ready <= 0)
                         continue;
                 }
             }
             continue;
         close_cli:
-            --nfds;
+            --n_ready;
             ERROR("client closed");
             close(fds[i].fd);
             remove_client(fds[i].fd);
@@ -192,7 +191,7 @@ void start_serve() {
 
     } while (!end_server);
 
-    for( i = 0; i < nfds; i++) {
+    for( i = 0; i < n_ready; i++) {
         close(fds[i].fd);
     }
 
