@@ -176,9 +176,6 @@ void dump_data_buf(const unsigned char buf[], unsigned long long size) {
 
 void send_to_client(int sender_fd, const unsigned char header[], const unsigned char buf[], unsigned int header_size,
                     unsigned long long size) {
-
-
-
     int i, p;
 
     /* trim buf */
@@ -192,7 +189,6 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
     unsigned char tmp[buf_size];
     memset(tmp, 0x0, buf_size);
 
-
     for(i = 0; i < header_size; i++) {
         tmp[i] = header[i];
     }
@@ -204,7 +200,6 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
         i++;
     }
 
-    dump_data_buf(tmp, buf_size);
     DEBUG("cli_size: %d", cli_size);
     for(i = 0; i < cli_size; i++) {
         int fd = clients[i]->fd;
@@ -214,8 +209,6 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
         }
 
         DEBUG("ready send to client: %d", fd);
-
-
         write(clients[i]->fd, tmp, sizeof(tmp));
     }
 
