@@ -176,7 +176,8 @@ void dump_data_buf(const unsigned char buf[], unsigned long long size) {
 
 void send_to_client(int sender_fd, const unsigned char header[], const unsigned char buf[], unsigned int header_size,
                     unsigned long long size) {
-    int i, p, wc;
+    int i, p;
+    unsigned long wc;
 
     /* trim buf */
     for(p = 0; p < size; p++) {
@@ -209,7 +210,14 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
         }
 
         DEBUG("ready send to client: %d", fd);
-        write(clients[i]->fd, tmp, sizeof(tmp));
+        do {
+            wc = write(clients[i]->fd, tmp, buf_size);
+            DEBUG("buf_size: %llu, write size: %lu", buf_size, wc);
+            if (wc < 0) {
+                if (errno != EWOULDBLOCK) continue;
+                break;
+            }
+        } while (wc == 0);
     }
 
 
