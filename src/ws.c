@@ -153,10 +153,60 @@ void dump_data_frame(struct data_frame *df) {
     free(tmp);
 }
 
-void send_to_client(int sender_fd) {
+void dump_data_buf(const unsigned char buf[], unsigned long long size) {
+    int nlc = 0;
+    unsigned long long max = 16;
+    if (size < max) max = size - 1;
+    char *tmp;
+    tmp = malloc(144);
+    for (int i = 0; i < size; ++i) {
+        if (nlc == max) {
+            nlc = 0;
+            DEBUG("%s", tmp);
+            strcpy(tmp, "");
+        }
+        strcat(tmp, wrap_char2str(buf[i]));
+        strcat(tmp, " ");
 
+        ++nlc;
+    }
+    strcpy(tmp, "");
+    free(tmp);
+}
+
+void send_to_client(int sender_fd, const unsigned char header[], const unsigned char buf[], unsigned int header_size,
+                    unsigned long long size) {
+
+
+
+    int i, p;
+
+    /* trim buf */
+    for(p = 0; p < size; p++) {
+        unsigned char ch = buf[p];
+        if (ch == '\0') break;
+    }
+    size = p;
+
+    unsigned long long buf_size = header_size + size;
+    unsigned char tmp[buf_size];
+    memset(tmp, 0x0, buf_size);
+
+
+    for(i = 0; i < header_size; i++) {
+        tmp[i] = header[i];
+    }
+
+    for(p = 0; p < size; p++) {
+        unsigned char ch = buf[p];
+        if (ch == '\0') break;
+        tmp[i] = buf[p];
+        i++;
+    }
+
+    dump_data_buf(tmp, buf_size);
     DEBUG("cli_size: %d", cli_size);
-    for(int i = 0; i < cli_size; i++) {
+    for(i = 0; i < cli_size; i++) {
         int fd = clients[i]->fd;
 
         if (fd == sender_fd) {
@@ -164,20 +214,9 @@ void send_to_client(int sender_fd) {
         }
 
         DEBUG("ready send to client: %d", fd);
-        unsigned char buf[7];
 
-        memset(buf, 0, sizeof(buf));
-        // hello
-        // 0x81 0x05 0x48 0x65 0x6c 0x6c 0x6f
-        buf[0] = 0x81;
-        buf[1] = 0x05;
-        buf[2] = 0x48;
-        buf[3] = 0x65;
-        buf[4] = 0x6c;
-        buf[5] = 0x6c;
-        buf[6] = 0x6f;
 
-        write(clients[i]->fd, buf, sizeof(buf));
+        write(clients[i]->fd, tmp, sizeof(tmp));
     }
 
 
@@ -259,12 +298,18 @@ repeat:
 }
 
 int handle_single_buffer(message *msg, struct data_frame *df) {
-    int index;
+    int index, cli_index, cli_header_size;
 
     index = 0;
+    cli_index = 0;
+
+    unsigned char cli_header[10]; /* client header */
+    memset(cli_header, 0x0, 10); /* init to zero byte */
+    unsigned char cli_df[MAX_FRAME_SINGLE_BUF_SIZE];
 
     if (df->frame_header_handled == 0) {
         unsigned char cur_byte = df->data[index];
+        cli_header[0] = cur_byte; /* the 1st byte */
         // Head buffer of frame
         df->fin = (HEX_0xFF & cur_byte) >> FIN_SHIFT_COUNT;
 
@@ -279,6 +324,9 @@ int handle_single_buffer(message *msg, struct data_frame *df) {
         }
 
         cur_byte = df->data[++index];
+        cli_header[1] = cur_byte; /* the 2nd byte */
+        /* https://stackoverflow.com/questions/47981/how-do-you-set-clear-and-toggle-a-single-bit */
+        cli_header[1] &= ~(1UL << 7); /* we clear MASK bit */
         // MASK
         df->masked = (HEX_0xFF & cur_byte) >> MASK_SHIFT_COUNT;
 
@@ -292,30 +340,42 @@ int handle_single_buffer(message *msg, struct data_frame *df) {
             cur_byte = df->data[++index];
             df->payload_final_len = cur_byte;
             df->payload_final_len = df->payload_final_len << 8;
+            cli_header[2] = cur_byte;
 
             for (int i = 0; i < 6; ++i) {
                 cur_byte = df->data[++index];
                 df->payload_final_len += cur_byte;
                 df->payload_final_len = df->payload_final_len << 8;
+
+                cli_header[3 + i] = cur_byte;
             }
 
             cur_byte = df->data[++index];
+            cli_header[9] = cur_byte;
             df->payload_final_len += cur_byte;
             df->header_size = 14;
+
+            cli_header_size = 10;
         } else if (df->payload_len == PL_LEN_VAL_126) {
             // Path 2: Payload len == 126 ext payload len 16 mask start at byte 4
             // combine 8 bytes into final length
             cur_byte = df->data[++index];
             df->payload_final_len = cur_byte;
             df->payload_final_len = df->payload_final_len << 8;
+            cli_header[2] = cur_byte;
 
             cur_byte = df->data[++index];
+            cli_header[3] = cur_byte;
             df->payload_final_len += cur_byte;
             df->header_size = 8;
+
+            cli_header_size = 4;
         } else {
             // Path 1: Payload len < 126 mask start at byte 2
             df->payload_final_len = df->payload_len;
             df->header_size = 6;
+
+            cli_header_size = 2;
         }
 
         // Masking-key (Extended payload length is 16 or 64)
@@ -341,10 +401,17 @@ int handle_single_buffer(message *msg, struct data_frame *df) {
         if (df->unmask_buffer_index == MAX_UNMASK_BUF_SIZE) {
             df->unmask_buffer_index = 0;
         }
-        df->unmasked_payload[df->unmask_buffer_index++] = cur_byte ^ (df->mask_key[df->mask_key_index]);
+        unsigned char cb = cur_byte ^ (df->mask_key[df->mask_key_index]);
+        cli_df[cli_index] = cb;
+        ++cli_index;
+
+        df->unmasked_payload[df->unmask_buffer_index++] = cb;
         ++df->mask_key_index;
         if (df->mask_key_index == 4) df->mask_key_index = 0;
     }
+
+    // On single buffer unmasked we send it to client
+    send_to_client(msg->source_fd, cli_header, cli_df, cli_header_size, df->cur_buf_len - cli_header_size);
 
     return 1;
 }

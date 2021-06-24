@@ -39,6 +39,8 @@ void sig_child(int signo) {
 }
 
 void start_serve() {
+    int test = 0b11111111;
+    DEBUG("%d", test &= ~(1UL << 7));
     socklen_t len;
     struct pollfd fds[OPEN_MAX];
     unsigned long long uid = 7;
@@ -173,9 +175,6 @@ void start_serve() {
                 } else {
                     rc = handle_conn(sock_fd);
                     if (rc == -1) goto close_cli;
-
-                    send_to_client(sock_fd);
-
 
                     if (rc == -2) {
                         goto close_cli;

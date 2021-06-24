@@ -152,6 +152,17 @@ struct data_frame {
     unsigned long long unmask_buffer_index;
 };
 
+typedef struct data_frame_cli_header {
+    // bit [1] len=1
+    unsigned char fin;
+
+    // bit [4, 7] len=4
+    unsigned char opcode;
+    unsigned char rev1;
+    unsigned char rev2;
+    unsigned char rev3;
+} data_frame_cli_header;
+
 // Hand shake
 int handle_handshake_opening(int fd);
 void do_sec_key_sha1(char *key, unsigned char **result);
@@ -163,10 +174,18 @@ int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long l
 int handle_conn(int conn_fd);
 int handle_single_buffer(message *msg, struct data_frame *df);
 
-// Sending message
-void send_to_client(int);
+/*
+ * Sending message to client.
+ * Every time when server received a buffer of data
+ * this routine will be called.
+ *
+ * sender_fd indicates which one is sender
+ */
+void send_to_client(int sender_fd, const unsigned char header[], const  unsigned char buf[], unsigned int header_size,
+                    unsigned long long size);
 
 // Debug
+void dump_data_buf(const unsigned char buf[], unsigned long long size);
 void dump_data_frame(struct data_frame *df);
 
 #endif //WEBSOCKET_SERVER_WS_H
