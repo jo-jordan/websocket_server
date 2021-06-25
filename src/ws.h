@@ -17,7 +17,7 @@
 #include "handshake.h"
 #include "base.h"
 
-#define MAX_CONN 10
+#define OPEN_MAX 10240
 
 // Single frame can be split into sort of buffers
 // this macro is max size of single buffer in byte

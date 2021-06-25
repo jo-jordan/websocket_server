@@ -26,11 +26,11 @@
 #include "ws.h"
 #include "net_util.h"
 
-static client *clients[MAX_CONN]; /* keyword static only for this file */
+static client *clients[OPEN_MAX]; /* keyword static only for this file */
 static int cli_size = 0;
 
 int add_client(client *cli) {
-    for (int i = 0; i < MAX_CONN; i++) {
+    for (int i = 0; i < OPEN_MAX; i++) {
         if (clients[i] == NULL) {
             clients[i] = cli;
             ++cli_size;
@@ -42,7 +42,7 @@ int add_client(client *cli) {
 }
 
 void remove_client(unsigned long long uid) {
-    for (int i = 0; i < MAX_CONN; i++) {
+    for (int i = 0; i < OPEN_MAX; i++) {
         if (clients[i] == NULL) continue;
         if (clients[i]->uid == uid) {
             clients[i] = NULL;
@@ -55,7 +55,7 @@ void remove_client(unsigned long long uid) {
 }
 
 client *get_client_by_addr(unsigned long long uid) {
-    for (int i = 0; i < MAX_CONN; ++i) {
+    for (int i = 0; i < OPEN_MAX; ++i) {
         client *cli = clients[i];
 
         if (cli == NULL) continue;

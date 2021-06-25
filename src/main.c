@@ -11,7 +11,7 @@
 #include "ws.h"
 #include "net_util.h"
 
-#define OPEN_MAX 10240
+
 /*
  * handshake
  * - opening handshake
@@ -113,8 +113,6 @@ void start_serve() {
             ERROR("EBADF: maxi + 1: %d", (maxi + 1));
         }
 
-        DEBUG("Now ready sockets size %d, errno: %d", n_ready, errno);
-
         if (fds[0].revents & POLLRDNORM) {
             len = sizeof(cli_addr);
             new_fd = accept(listenfd, (struct sockaddr *)&cli_addr, &len);
@@ -166,7 +164,6 @@ void start_serve() {
                 goto close_cli;
             }
             if (fds[i].revents & (POLLRDNORM | POLLERR)) {
-                DEBUG("Descriptor %d is readable", fds[i].fd);
 
                 getpeername(fds[i].fd, (struct sockaddr*)&cli_addr, &len);
                 uid = cli_addr.sin_addr.s_addr;
