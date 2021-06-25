@@ -179,6 +179,7 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
                     unsigned long long size) {
     int i, p;
     unsigned long wc;
+    dump_data_buf(header, header_size);
 
     /* trim buf */
     for(p = 0; p < size; p++) {
@@ -256,7 +257,6 @@ int handle_conn(int conn_fd) {
         if (df.payload_read_len == (df.payload_final_len + df.header_size)) {
             // Single frame read done
             DEBUG("(1)PAYLOAD size (in byte): %llu",  df.payload_read_len);
-//            send_to_client(msg->source_fd);
             return (1);
         }
 
@@ -286,8 +286,6 @@ repeat:
     DEBUG("cur_buf_len: %lu, next_read_size: %lu, errno: %d", rn, next_read_size, errno);
     df->payload_read_len+=rn;
     df->cur_buf_len = rn;
-
-//    dump_data_frame(df);
 
     return (1);
 }
