@@ -21,7 +21,7 @@
 
 // Single frame can be split into sort of buffers
 // this macro is max size of single buffer in byte
-#define MAX_FRAME_SINGLE_BUF_SIZE       4196
+#define MAX_FRAME_SINGLE_BUF_SIZE       40960
 
 // Data after unmasked buffer size
 #define MAX_UNMASK_BUF_SIZE       81920
