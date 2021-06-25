@@ -15,7 +15,7 @@ Implements according to [RFC6455](https://datatracker.ietf.org/doc/rfc6455/).
     - [ ] Windows
 - [ ] Using Event loop with Reactor pattern
     - [x] Multiple process for now
-    - [ ] Using system call `poll`
+    - [x] Using system call `poll`
     - [ ] Event loop
 - [ ] RFC6455 validations
 - [ ] Security stuff
