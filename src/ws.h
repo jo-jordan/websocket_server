@@ -76,6 +76,9 @@
 
 #define OP_CTRL_CLOSE 0x8
 
+/* Mask key size is always 4 */
+#define MASK_KEY_SIZE 4
+
 
 
 typedef struct message_t {
@@ -106,8 +109,11 @@ client *get_client_by_addr(unsigned long long uid);
 void remove_client(unsigned long long uid);
 
 struct data_frame {
-    // frame data
+    // masked frame data
     unsigned char data[MAX_FRAME_SINGLE_BUF_SIZE];
+
+    // Unmasked frame data
+    unsigned char unmasked_data[MAX_FRAME_SINGLE_BUF_SIZE];
 
     // bit [1] len=1
     unsigned char fin;
@@ -127,13 +133,13 @@ struct data_frame {
     unsigned char payload_len;
 
     // final length of payload, NOT message total length
-    unsigned long long payload_final_len;
+    unsigned long payload_final_len;
 
     // Current payload read length
     unsigned long long payload_read_len;
 
     // Current buffer length (haw many bytes read from source fd)
-    unsigned long long cur_buf_len;
+    unsigned long cur_buf_len;
 
     // If header of frame handled
     unsigned char frame_header_handled;
@@ -144,12 +150,7 @@ struct data_frame {
     // if len of ext_payload_len = 16 then bit [32，63]
     // else bit [80, 111]
     // length is 32-bit
-    unsigned char mask_key[4];
-
-    // Unmasked payload data buffer
-    unsigned char unmasked_payload[MAX_UNMASK_BUF_SIZE];
-
-    unsigned long long unmask_buffer_index;
+    unsigned char mask_key[MASK_KEY_SIZE];
 };
 
 typedef struct data_frame_cli_header {
@@ -168,11 +169,24 @@ int handle_handshake_opening(int fd);
 void do_sec_key_sha1(char *key, unsigned char **result);
 
 
-int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size);
+int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long next_read_size);
 
 // Receiving message
 int handle_conn(int conn_fd);
+
+/*
+ * Handle single buffer.
+ * After we modify io model to non-blocking, single buffer MAY contains two or more messages
+ * so we should handle message one by one from this single buffer.
+ * IT'S SO FUCKLLY.
+ */
 int handle_single_buffer(message *msg, struct data_frame *df);
+
+/*
+ * Method of handle single buffer one by one
+ * EXCEPT DATA
+ */
+void reset_data_frame(struct data_frame *df);
 
 /*
  * Sending message to client.

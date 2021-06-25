@@ -47,7 +47,7 @@ void remove_client(unsigned long long uid) {
         if (clients[i]->uid == uid) {
             clients[i] = NULL;
             --cli_size;
-            DEBUG("remove_client: %d", i);
+            DEBUG("remove_client: fd: %d, uid: %llu", i, uid);
             DEBUG("table size now: %d", cli_size);
             break;
         }
@@ -170,6 +170,7 @@ void dump_data_buf(const unsigned char buf[], unsigned long long size) {
 
         ++nlc;
     }
+    DEBUG("%s", tmp);
     strcpy(tmp, "");
     free(tmp);
 }
@@ -201,7 +202,6 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
         i++;
     }
 
-    DEBUG("cli_size: %d", cli_size);
     for(i = 0; i < cli_size; i++) {
         int fd = clients[i]->fd;
 
@@ -209,18 +209,11 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
             continue;
         }
 
-        DEBUG("ready send to client: %d", fd);
-        do {
-            wc = write(clients[i]->fd, tmp, buf_size);
-            DEBUG("buf_size: %llu, write size: %lu", buf_size, wc);
-            if (wc < 0) {
-                if (errno != EWOULDBLOCK) continue;
-                break;
-            }
-        } while (wc == 0);
+        wc = write(clients[i]->fd, tmp, buf_size);
+        if (wc <= 0) {
+            ERROR("errno: %d", errno);
+        }
     }
-
-
 }
 
 int handle_conn(int conn_fd) {
@@ -234,7 +227,7 @@ int handle_conn(int conn_fd) {
     struct data_frame df;
     memset(&df, 0, sizeof(df));
 
-    unsigned long long next_read_size = MAX_FRAME_SINGLE_BUF_SIZE;
+    unsigned long next_read_size = MAX_FRAME_SINGLE_BUF_SIZE;
 
     while (1) {
         // Read until meet max length
@@ -276,7 +269,7 @@ int handle_conn(int conn_fd) {
     return 0;
 }
 
-int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long long next_read_size) {
+int read_into_single_buffer(message *msg, struct data_frame *df, unsigned long next_read_size) {
 repeat:
     memset(df->data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
     ssize_t rn = read(msg->source_fd, df->data, next_read_size);
@@ -290,6 +283,7 @@ repeat:
     }
     if (rn == 0) return 0;
 
+    DEBUG("cur_buf_len: %lu, next_read_size: %lu, errno: %d", rn, next_read_size, errno);
     df->payload_read_len+=rn;
     df->cur_buf_len = rn;
 
@@ -298,15 +292,35 @@ repeat:
     return (1);
 }
 
+void reset_data_frame(struct data_frame *df) {
+
+    memset(df->unmasked_data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
+    memset(df->mask_key, 0, MASK_KEY_SIZE);
+    df->payload_final_len = 0;
+    df->header_size = 0;
+    df->cur_buf_len = 0;
+    df->payload_len = 0;
+    df->opcode = 0;
+    df->rev1 = 0;
+    df->rev2 = 0;
+    df->rev3 = 0;
+    df->mask_key_index = 0;
+    df->fin = 0;
+    df->frame_header_handled = 0;
+    df->masked = 1;
+
+    df->payload_read_len = 0;
+}
+
 int handle_single_buffer(message *msg, struct data_frame *df) {
-    int index, cli_index, cli_header_size;
-
+    int index;
+    unsigned long cli_header_size;
     index = 0;
-    cli_index = 0;
-
+    cli_header_size = 0;
     unsigned char cli_header[10]; /* client header */
+
+handle_other_msg:
     memset(cli_header, 0x0, 10); /* init to zero byte */
-    unsigned char cli_df[MAX_FRAME_SINGLE_BUF_SIZE];
 
     if (df->frame_header_handled == 0) {
         unsigned char cur_byte = df->data[index];
@@ -387,7 +401,7 @@ int handle_single_buffer(message *msg, struct data_frame *df) {
         } while (++i < 4);
 
         df->frame_header_handled = 1;
-        DEBUG("payload_final_len: %llu", df->payload_final_len);
+        DEBUG("payload_final_len: %lu", df->payload_final_len);
     }
 
     // rest sequence buffer of frame
@@ -395,24 +409,37 @@ int handle_single_buffer(message *msg, struct data_frame *df) {
 
     if (index > 0) ++index; // if index > 0 then this will be second time
 
-    int i;
-    for (i = index; i < df->cur_buf_len; ++i) {
-        unsigned char cur_byte = df->data[i];
+    int unmask_buffer_index;
 
-        if (df->unmask_buffer_index == MAX_UNMASK_BUF_SIZE) {
-            df->unmask_buffer_index = 0;
-        }
-        unsigned char cb = cur_byte ^ (df->mask_key[df->mask_key_index]);
-        cli_df[cli_index] = cb;
-        ++cli_index;
-
-        df->unmasked_payload[df->unmask_buffer_index++] = cb;
+    unmask_buffer_index = 0;
+    memset(df->unmasked_data, 0, MAX_FRAME_SINGLE_BUF_SIZE);
+    unsigned long msg_total_size = cli_header_size + MASK_KEY_SIZE + df->payload_final_len;
+    for (; index < df->cur_buf_len; ++index) {
+        unsigned char cur_byte = df->data[index];
+        df->unmasked_data[unmask_buffer_index++] = cur_byte ^ (df->mask_key[df->mask_key_index]);
         ++df->mask_key_index;
         if (df->mask_key_index == 4) df->mask_key_index = 0;
+
+        // if single message unmasked done and single buf size is greater than single message
+        // , we goto handle_other_msg
+        if (msg_total_size < df->cur_buf_len && (index + 1) % msg_total_size == 0) {
+            // On single buffer unmasked we send it to client
+            send_to_client(msg->source_fd, cli_header, df->unmasked_data, cli_header_size,
+                           msg_total_size - cli_header_size);
+
+            unsigned long cur_buf_len = df->cur_buf_len;
+            reset_data_frame(df);
+            df->cur_buf_len = cur_buf_len;
+
+            if (index + 1 == df->cur_buf_len) return 1;
+            ++index;
+            goto handle_other_msg;
+        }
     }
 
     // On single buffer unmasked we send it to client
-    send_to_client(msg->source_fd, cli_header, cli_df, cli_header_size, df->cur_buf_len - cli_header_size);
+    send_to_client(msg->source_fd, cli_header, df->unmasked_data, cli_header_size,
+                   msg_total_size - cli_header_size);
 
     return 1;
 }

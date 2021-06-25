@@ -47,6 +47,7 @@ void start_serve() {
     int listenfd;
     int new_fd = -1; /* for new incoming connection */
     int sock_fd = -1;
+    client *cli;
     on = 1;
     end_server = 0;
     n_ready = 0; /* each poll */
@@ -105,6 +106,13 @@ void start_serve() {
             continue;
         }
 
+        if (errno == EINVAL) {
+            ERROR("EINVAL: maxi + 1: %d", (maxi + 1));
+        }
+        if (errno == EBADF) {
+            ERROR("EBADF: maxi + 1: %d", (maxi + 1));
+        }
+
         DEBUG("Now ready sockets size %d, errno: %d", n_ready, errno);
 
         if (fds[0].revents & POLLRDNORM) {
@@ -137,7 +145,6 @@ void start_serve() {
                   get_conn_addr(&cli_addr),
                   get_conn_port(&cli_addr));
 
-            client *cli;
             uid = cli_addr.sin_addr.s_addr;
             uid = (uid << (sizeof(in_port_t) * 8)) + cli_addr.sin_port; /* IP + port */
             cli = malloc(sizeof(client));
@@ -159,7 +166,8 @@ void start_serve() {
             if (fds[i].revents & (POLLRDNORM | POLLERR)) {
                 DEBUG("Descriptor %d is readable", fds[i].fd);
 
-                client *cli = get_client_by_addr(uid);
+                cli = get_client_by_addr(uid);
+                if (NULL == cli) continue;
                 if (!cli->is_shaken) {
                     rc = handle_handshake_opening(fds[i].fd);
                     if (rc < 0) {
@@ -187,7 +195,7 @@ void start_serve() {
             --n_ready;
             ERROR("client closed");
             close(fds[i].fd);
-            remove_client(fds[i].fd);
+            remove_client(cli->uid);
             fds[i].fd = -1;
         }
 
@@ -232,17 +240,16 @@ Frame format:
      |12_____________|13_____________|14____________|15______________|
 
 
-0x81     0x06 48 65 6C 6C 6F
-10000001 00000110
-01101111 00000000 00000000 00000000
+ 10000001 10000100
+ 01000001 01011000 00111100 01001000 KEY
+ 00000000 00001011 01111000 00001110
+ ---------------------------------------
+ 01000001 01010011 01000100 01000110
 
- mask: 11001000 10000001 10010010 11000010
-  XOR  10100000 11100100 11111110 10101110 10100111
-  -------------------------------------------
-       01101000 01100101 01101100 01101100
-
-
-
- 01101000 01100101 01101100 01101100
+ 10000001 10000100
+ 11011010 00001101 01111111 11011000 KEY
+ 10011011 01011110 00111011 10011110
+ -------------------------------------
+ 01000001 01010011 01000100 01000110
 
  */
