@@ -140,9 +140,11 @@ void start_serve() {
             if (i > maxi)
                 maxi = i;
 
+            char addr[16] = "";
+            get_conn_addr(&cli_addr, addr);
             DEBUG("New incoming connection - %d", new_fd);
             DEBUG("connection from %s, port %d",
-                  get_conn_addr(&cli_addr),
+                  addr,
                   get_conn_port(&cli_addr));
 
             uid = cli_addr.sin_addr.s_addr;
@@ -166,6 +168,10 @@ void start_serve() {
             if (fds[i].revents & (POLLRDNORM | POLLERR)) {
                 DEBUG("Descriptor %d is readable", fds[i].fd);
 
+                getpeername(fds[i].fd, (struct sockaddr*)&cli_addr, &len);
+                uid = cli_addr.sin_addr.s_addr;
+                uid = (uid << (sizeof(in_port_t) * 8)) + cli_addr.sin_port; /* IP + port */
+
                 cli = get_client_by_addr(uid);
                 if (NULL == cli) continue;
                 if (!cli->is_shaken) {
@@ -182,12 +188,9 @@ void start_serve() {
                 } else {
                     rc = handle_conn(sock_fd);
                     if (rc == -1) goto close_cli;
+                    if (rc == -2) goto close_cli;
 
-                    if (rc == -2) {
-                        goto close_cli;
-                    }
-                    if (--n_ready <= 0)
-                        continue;
+                    if (--n_ready <= 0) continue;
                 }
             }
             continue;

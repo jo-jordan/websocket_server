@@ -7,7 +7,7 @@
 
 #include <arpa/inet.h>
 
-const char* get_conn_addr(struct sockaddr_in *addr);
+void get_conn_addr(struct sockaddr_in *addr, char * );
 unsigned int get_conn_port(struct sockaddr_in *addr);
 
 #endif //WEBSOCKET_SERVER_NET_UTIL_H
