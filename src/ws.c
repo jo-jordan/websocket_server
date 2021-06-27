@@ -203,7 +203,8 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
         i++;
     }
 
-    for(i = 0; i < cli_size; i++) {
+    for(i = 0; i < OPEN_MAX; i++) {
+        if (NULL == clients[i]) continue;
         int fd = clients[i]->fd;
 
         if (fd == sender_fd) {
