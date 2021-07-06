@@ -7,7 +7,7 @@ Implements according to [RFC6455](https://datatracker.ietf.org/doc/rfc6455/).
 - [x] Receiving data from client
     - [x] Unmask single frame payload
     - [x] Unmask multiple frames payload
-    - [ ] Ping & Pong
+    - [x] Ping & Pong
 - [x] Sending data to client
 - [ ] All platform supported
     - [x] Linux

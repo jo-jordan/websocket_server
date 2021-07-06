@@ -76,6 +76,10 @@
 
 #define OP_CTRL_CLOSE 0x8
 
+#define OP_CTRL_PING 0x9
+
+#define OP_CTRL_PONG 0xA
+
 /* Mask key size is always 4 */
 #define MASK_KEY_SIZE 4
 

@@ -329,6 +329,10 @@ handle_other_msg:
             return -2; /* Client Close */
         }
 
+        if (df->opcode == OP_CTRL_PING) {
+            cli_header[0] = cli_header[0] + 0b1;
+        }
+
         cur_byte = df->data[++index];
         cli_header[1] = cur_byte; /* the 2nd byte */
         /* https://stackoverflow.com/questions/47981/how-do-you-set-clear-and-toggle-a-single-bit */
