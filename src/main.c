@@ -24,6 +24,11 @@
  * */
 void start_serve();
 void sig_child(int signo);
+void gen_uid(struct sockaddr_in *, unsigned long long *);
+
+void gen_uid(struct sockaddr_in * addr, unsigned long long * uid) {
+    *uid = addr->sin_addr.s_addr + addr->sin_port; /* IP + port */
+}
 
 
 int main() {
@@ -140,13 +145,12 @@ void start_serve() {
 
             char addr[16] = "";
             get_conn_addr(&cli_addr, addr);
-            DEBUG("New incoming connection - %d", new_fd);
             DEBUG("connection from %s, port %d",
                   addr,
                   get_conn_port(&cli_addr));
 
-            uid = cli_addr.sin_addr.s_addr;
-            uid = (uid << (sizeof(in_port_t) * 8)) + cli_addr.sin_port; /* IP + port */
+            gen_uid(&cli_addr, &uid);
+
             cli = malloc(sizeof(client));
             cli->cli_addr = cli_addr;
             cli->uid = uid;
@@ -166,8 +170,7 @@ void start_serve() {
             if (fds[i].revents & (POLLRDNORM | POLLERR)) {
 
                 getpeername(fds[i].fd, (struct sockaddr*)&cli_addr, &len);
-                uid = cli_addr.sin_addr.s_addr;
-                uid = (uid << (sizeof(in_port_t) * 8)) + cli_addr.sin_port; /* IP + port */
+                gen_uid(&cli_addr, &uid);
 
                 cli = get_client_by_addr(uid);
                 if (NULL == cli) continue;
@@ -195,7 +198,8 @@ void start_serve() {
             --n_ready;
             ERROR("client closed");
             close(fds[i].fd);
-            remove_client(cli->uid);
+            if (cli != NULL)
+                remove_client(cli->uid);
             fds[i].fd = -1;
         }
 
@@ -238,5 +242,8 @@ Frame format:
      |888888888888888|999999999999999|10101010101010|11______________|
      +-------------------------------+-------------------------------+
      |12_____________|13_____________|14____________|15______________|
+
+
+     10001010 00000000
 
  */

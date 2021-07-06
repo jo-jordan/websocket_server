@@ -89,9 +89,7 @@ int handle_handshake_opening(int fd) {
             ws_sec_key = strtok(token, ": ");
             ws_sec_key = strtok(NULL, ": ");
 
-            DEBUG("We got sec-wb-key: %s", ws_sec_key);
             do_sec_key_sha1(ws_sec_key, &result);
-            DEBUG("SHA1 result: %s", result);
             break;
         }
     }
@@ -103,7 +101,6 @@ int handle_handshake_opening(int fd) {
     strcat(res, TOKEN_SEP TOKEN_SEP);
 
     ssize_t wn = write(fd, res, strlen(res));
-    DEBUG("response(size: %zd): %s", wn, res);
 
     free(res);
 
@@ -179,7 +176,6 @@ void send_to_client(int sender_fd, const unsigned char header[], const unsigned 
                     unsigned long long size) {
     int i, p;
     unsigned long wc;
-    dump_data_buf(header, header_size);
 
     /* trim buf */
     for(p = 0; p < size; p++) {
@@ -247,17 +243,14 @@ int handle_conn(int conn_fd) {
         rc = handle_single_buffer(msg, &df);
         if (rc == -1) {
             ERROR("handle_single_buffer failed -1");
-            DEBUG("(-1)PAYLOAD size (in byte): %llu",  df.payload_read_len);
             return (-1);
         }
         if (rc == -2) {
-            DEBUG("(-2)PAYLOAD size (in byte): %llu",  df.payload_read_len);
             return -2;
         }
 
         if (df.payload_read_len == (df.payload_final_len + df.header_size)) {
             // Single frame read done
-            DEBUG("(1)PAYLOAD size (in byte): %llu",  df.payload_read_len);
             return (1);
         }
 
@@ -331,7 +324,6 @@ handle_other_msg:
 
         df->opcode = cur_byte << 1;
         df->opcode = df->opcode >> 1;
-        DEBUG("FIN: %d, opcode: %s", df->fin, wrap_char2str(df->opcode));
 
         if (df->opcode == OP_CTRL_CLOSE) {
             return -2; /* Client Close */
