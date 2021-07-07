@@ -86,7 +86,7 @@ int handle_handshake_opening(int fd) {
 
     for (char *token = strtok_r(req, TOKEN_SEP, &last); token ; token = strtok_r(NULL, TOKEN_SEP, &last)) {
         if (strstr(token, WS_SEC_KEY)) {
-            ws_sec_key = strtok(token, ": ");
+            strtok(token, ": ");
             ws_sec_key = strtok(NULL, ": ");
 
             do_sec_key_sha1(ws_sec_key, &result);
@@ -100,7 +100,7 @@ int handle_handshake_opening(int fd) {
     strcat(res, (const char *) result);
     strcat(res, TOKEN_SEP TOKEN_SEP);
 
-    ssize_t wn = write(fd, res, strlen(res));
+    write(fd, res, strlen(res));
 
     free(res);
 
@@ -131,7 +131,7 @@ void do_sec_key_sha1(char *key, unsigned char **result) {
 }
 
 void dump_data_frame(struct data_frame *df) {
-    unsigned char *rbuff = df->data;
+    unsigned char *r_buf = df->data;
     int nlc = 0;
     char *tmp;
     tmp = malloc(144);
@@ -141,7 +141,7 @@ void dump_data_frame(struct data_frame *df) {
             DEBUG("%s", tmp);
             strcpy(tmp, "");
         }
-        strcat(tmp, wrap_char2str(rbuff[i]));
+        strcat(tmp, wrap_char2str(r_buf[i]));
         strcat(tmp, " ");
 
         ++nlc;
