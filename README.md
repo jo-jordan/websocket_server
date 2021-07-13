@@ -17,13 +17,17 @@ make
 ## Run client in a browser
 ```javascript
 // Make a WebSocket client
-let s = new WebSocket('ws://127.0.0.1:9000/')
+let ws = new WebSocket('ws://127.0.0.1:9000/')
 
 // Make client listen for message
-s.onmessage = (e) => { console.log('message:', e.data) }
+ws.onmessage = (e) => { console.log('message:', e.data) }
+ws.onclose = (e) => { console.log('message:', e) }
 
 // Send message to server
-s.send('hello')
+ws.send('hello')
+
+// Close conncetion
+ws.close()
 ```
 
 # TODO List
